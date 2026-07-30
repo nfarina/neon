@@ -1,0 +1,135 @@
+# Neo
+
+## Purpose of This File
+
+This file is durable project memory for AI agents working on Neo. Its expected
+reader is an AI, not a human.
+
+It records facts, decisions, current intentions, and unresolved ideas that are
+useful when starting a new session. It is not a place for generic engineering
+advice, safety boilerplate, workflow rules, or explanations of things a capable
+agent already knows. Add project-specific context; do not turn it into a
+general-purpose agent handbook.
+
+## Identity and Mission
+
+Neo is Nick's personal AI assistant and the project used to build that
+assistant. Neo lives on a dedicated MacBook in Nick's kitchen.
+
+The long-term idea is an assistant that is conversational, has access to useful
+personal context, can take actions on Nick's behalf, and can participate in
+improving its own implementation. The development machine and the machine
+running Neo are the same computer.
+
+## Why It Is a Mac
+
+Useful personal context is in Apple's ecosystem, including Messages, Calendar,
+Reminders, Contacts, Mail, iCloud data, and native Mac applications. Many of
+these do not have suitable public APIs. A Mac signed into Nick's accounts can
+access or automate them locally through native applications, macOS automation,
+and command-line utilities.
+
+Nick's primary MacBook Air remains the machine for his other applications,
+side projects, and general development. The MacBook Neo is dedicated to
+developing and running Neo.
+
+## Project Location
+
+All Neo source code and project documentation live under:
+
+```text
+/Users/nick/neo
+```
+
+Platform-installed applications, user preferences, credentials, and runtime
+data can remain in their normal macOS locations. They are not project source.
+Credentials and private personal data are not stored in this repository.
+
+## Ambient Assistant Vision
+
+The likely first project is a full-screen ambient application for the kitchen:
+
+- It renders a simple, expressive pair of eyes.
+- The eyes can close or appear asleep while nothing is happening.
+- The wake phrase is expected to be "Hey Neo."
+- Hearing the wake phrase opens the eyes and begins a spoken interaction.
+- A speech API transcribes Nick's request.
+- An AI model produces the response.
+- Neo responds aloud through speech synthesis.
+
+The initial goal is a drop-in replacement for the current Alexa Plus device:
+fast, natural access to an AI with broad world knowledge. Personal tools and
+deeper Mac integration can follow.
+
+OpenAI and Grok speech services have been mentioned as possibilities. No
+speech-to-text, language-model, text-to-speech, wake-word, application
+framework, or visual implementation has been selected.
+
+The eyes and voice loop are the expected first build because they are the most
+fun and establish Neo as a presence in the kitchen. This is current intent, not
+a finalized implementation plan.
+
+## Remote Agent Vision
+
+Another direction is a long-running Claude Code capability that Nick can reach
+from his phone and use for more involved personal-assistant tasks.
+
+Examples discussed:
+
+- Research a topic or website and put useful results on Calendar.
+- Inspect a Messages conversation using `imsg` and draft or send a reply.
+- Look through email and triage it.
+- Run other longer computer-based tasks while Nick is away from the Mac.
+
+One possible interface is a small iOS app invoked with the iPhone's Action
+button. Nick would dictate a request; the app would send the transcription to
+the Mac; the Mac might start a Claude Code session with the prompt using the
+`-p` argument; and a result could return through a notification, email, or some
+other channel.
+
+This remote-agent concept is exploratory. The transport, iOS implementation,
+session lifecycle, response channel, and degree of autonomy are undecided.
+
+## AI and Development Context
+
+- Claude Code is intended to be the primary AI engine powering Neo.
+- Codex is currently helping set up the machine and project.
+- Claude, Grok, Codex, and other CLI agents may all work in this directory.
+- `CLAUDE.md` points Claude Code to this file so project context has one
+  canonical source.
+- Neo is meant to be able to improve its own code on the computer where it
+  runs.
+
+## Current Machine State
+
+As of July 30, 2026:
+
+- Apple Command Line Tools are installed.
+- Homebrew is installed and available for additional tools.
+- The full Xcode application is not installed.
+- The current preference is to avoid installing full Xcode unless Neo
+  eventually requires it.
+- `imsg` was installed through Homebrew for local Messages access.
+- Ramblr is installed and configured with Nick's existing preferences and API
+  keys.
+- AppKeys is installed with Nick's existing set of application hotkeys.
+- Nick's MacBook Air can be mounted through Finder's Network view for small,
+  selective file transfers.
+- This directory contains project context but no Neo implementation yet.
+- This directory is a Git repository on the `main` branch. It does not have an
+  initial commit yet.
+
+## Current Decisions
+
+- Neo development stays in `/Users/nick/neo`.
+- Unrelated development stays on the MacBook Air.
+- The project will favor the existing Command Line Tools and Homebrew setup
+  before considering full Xcode.
+- The ambient eyes and spoken conversation are the likely first implementation
+  target.
+- The implementation architecture has not been chosen.
+- Agents can commit completed, coherent work without waiting for Nick to make
+  the commit or explicitly request one. Unfinished work should not be committed
+  merely to make the working tree clean.
+- This file stays focused on facts, actual decisions, current intent, and open
+  questions rather than generic guidance for AI agents.
