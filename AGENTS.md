@@ -121,11 +121,17 @@ As of July 30, 2026:
 - Ramblr is installed and configured with Nick's existing preferences and API
   keys.
 - AppKeys is installed with Nick's existing set of application hotkeys.
+- The source for Nick's `allow-chrome-mcp` helper is tracked at
+  `tools/allow-chrome-mcp`. It is installed as the user LaunchAgent
+  `com.nfarina.allow-chrome-mcp` and requires macOS Accessibility permission.
+- Neo's installed Swift 6.3.3 compiler and default macOS 26.5 SDK are
+  mismatched. The `allow-chrome-mcp` Makefile currently builds against the
+  installed macOS 15.4 SDK with a macOS 15 deployment target.
 - Nick's MacBook Air can be mounted through Finder's Network view for small,
   selective file transfers.
-- This directory contains project context but no Neo implementation yet.
-- This directory is a Git repository on the `main` branch. It does not have an
-  initial commit yet.
+- This directory contains project context and the `allow-chrome-mcp` utility,
+  but no ambient-assistant implementation yet.
+- This directory is a Git repository on the `main` branch.
 
 ## Current Decisions
 
