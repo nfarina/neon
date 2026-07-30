@@ -110,6 +110,14 @@ As of July 30, 2026:
 - The current preference is to avoid installing full Xcode unless Neo
   eventually requires it.
 - `imsg` was installed through Homebrew for local Messages access.
+- Node is installed through Homebrew, primarily so `npx`-based MCP servers work.
+- The `chrome-devtools` MCP server is configured at user scope in
+  `~/.claude.json` as `npx chrome-devtools-mcp@latest --autoConnect`, matching
+  the MacBook Air.
+- The Chrome DevTools skills that ship inside the `chrome-devtools-mcp` package
+  are installed in `~/.claude/skills`. `~/.claude-update-chrome-mcp-skills`
+  refreshes them from the latest published package; it also lists skills in
+  that directory that did not come from the package, so stale ones are visible.
 - Ramblr is installed and configured with Nick's existing preferences and API
   keys.
 - AppKeys is installed with Nick's existing set of application hotkeys.
