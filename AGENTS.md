@@ -201,13 +201,18 @@ Work toward Neon's spoken conversation lives under `voice/`.
   partial transcript; NSLog alone proved unreliable to observe. Debug
   workflow: run `eyes/Neon.app/Contents/MacOS/Neon 2> /tmp/log` directly —
   Terminal holds a mic grant, so permissions work from a shell launch.
-- Voice-processing echo cancellation (`setVoiceProcessingEnabled`) fails on
-  this machine with CoreAudio error -10875, so VoiceSession uses a
-  half-duplex gate instead: mic upload is suppressed while replies play
-  (plus a 0.3 s tail). Consequence: no voice barge-in for now. Revisit AEC
-  if talking over Neon matters.
-- After a voice session releases the mic, the wake listener's engine can
-  need a retry to restart; it retries once after 0.5 s.
+- Audio runs through `AudioHub`: one persistent AVAudioEngine shared by the
+  wake listener and voice sessions (both are tap consumers), with voice
+  processing (echo cancellation) enabled once at startup. Verified working
+  full-duplex: Neon's own speech does not appear in input transcription, so
+  voice barge-in works. Two conditions, found by bisection, are required
+  for VP to initialize (else CoreAudio -10875): tap the input in mono (the
+  VP node exposes the raw 4-channel mic array on this MacBook), and attach
+  the playback node lazily after the engine is running, never during graph
+  construction. VoiceSession falls back to a half-duplex gate (mic muted
+  during playback) only if VP is unavailable.
+- `NEON_AUTOWAKE=1` in the environment starts a voice session ~2 s after
+  launch — full-path testing without speaking the wake phrase.
 - Privacy note: the wake listener's continuous transcription is on-device
   only; audio reaches Google only during an open session after the wake
   phrase.
