@@ -114,6 +114,17 @@ As of July 30, 2026:
 - The `chrome-devtools` MCP server is configured at user scope in
   `~/.claude.json` as `npx chrome-devtools-mcp@latest --autoConnect`, matching
   the MacBook Air.
+- `--autoConnect` attaches to the normal running Chrome rather than a separate
+  profile. It needs remote debugging enabled at
+  `chrome://inspect/#remote-debugging` *and* the Chrome-side dialog approving
+  the incoming debugging connection. Enabling the toggle only opens the port;
+  it does not authorize a client.
+- If the server reports `Could not find DevToolsActivePort`, that message is
+  misleading. The package wraps the port-file read and the WebSocket connect in
+  one `try`, so a refused connection is reported as a missing file. Check
+  whether the connection was approved in Chrome before suspecting the file.
+- `--browserUrl` is not a usable fallback on Chrome 151: the classic
+  `/json/version` discovery endpoint returns 404 in this mode.
 - The Chrome DevTools skills that ship inside the `chrome-devtools-mcp` package
   are installed in `~/.claude/skills`. `~/.claude-update-chrome-mcp-skills`
   refreshes them from the latest published package; it also lists skills in
