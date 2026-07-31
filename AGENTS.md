@@ -129,12 +129,6 @@ As of July 31, 2026:
   are installed in `~/.claude/skills`. `~/.claude-update-chrome-mcp-skills`
   refreshes them from the latest published package; it also lists skills in
   that directory that did not come from the package, so stale ones are visible.
-- Ramblr is installed and configured with Nick's existing preferences and API
-  keys.
-- AppKeys is installed with Nick's existing set of application hotkeys.
-- Claude Usage 3.1.1 is installed. Its profiles, per-profile credentials,
-  preferences, and usage history were imported from the MacBook Air through
-  the `HamedElfayome.Claude-Usage` UserDefaults domain.
 - The source for Nick's `allow-chrome-mcp` helper is tracked at
   `tools/allow-chrome-mcp`. It is installed as the user LaunchAgent
   `com.nfarina.allow-chrome-mcp` and requires macOS Accessibility permission.
