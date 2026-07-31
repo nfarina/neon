@@ -184,11 +184,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         session.onThinking = { [weak self] on in
             self?.webView.evaluateJavaScript("window.neon && neon.thinking(\(on))")
         }
-        session.onHearing = { [weak self] amp in
-            DispatchQueue.main.async {  // arrives on the audio thread
-                self?.webView.evaluateJavaScript("window.neon && neon.hearing(\(amp))")
-            }
-        }
         session.onDoze = { [weak self] dozing in
             self?.webView.evaluateJavaScript("window.neon && neon.\(dozing ? "doze" : "wake")()")
         }

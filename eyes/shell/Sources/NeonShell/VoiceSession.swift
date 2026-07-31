@@ -6,9 +6,6 @@ import Foundation
 // AudioHub, plays replies through it, and meters token usage into costs.
 final class VoiceSession: NSObject {
     var onAmplitude: (Float) -> Void = { _ in }
-    /// Voice-level mic energy (0–1), ~10 Hz while someone is talking.
-    /// Called from the audio thread. Drives the eyes' listening look.
-    var onHearing: (Float) -> Void = { _ in }
     /// Fires true when the model starts reasoning (thought parts streaming)
     /// and false when its spoken reply begins — drives the eyes' indicator.
     var onThinking: (Bool) -> Void = { _ in }
@@ -61,7 +58,6 @@ final class VoiceSession: NSObject {
     // this is the only live signal that he's mid-sentence. (Echo-cancelled
     // input: Neon's own voice can't keep her awake.)
     private var lastVoiceAt = Date.distantPast
-    private var lastHearingSent = Date.distantPast
     private let sessionStart = Date()
     private var usage = VoiceUsage()
     private var heard = ""  // running input transcript, for the debug overlay
@@ -363,10 +359,6 @@ final class VoiceSession: NSObject {
         let rms = sqrt(Double(acc) / Double(n))
         if rms > 250 {  // low bar: quiet/distant speech must still count
             lastVoiceAt = Date()
-            if Date().timeIntervalSince(lastHearingSent) > 0.1 {
-                lastHearingSent = Date()
-                onHearing(Float(min(1, rms / 2500)))
-            }
         }
         let data = Data(bytes: ch[0], count: n * 2)
         sendJSON(engine.audioMessage(data.base64EncodedString()))
