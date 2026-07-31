@@ -332,9 +332,15 @@ Work toward Neon's spoken conversation lives under `voice/`.
   future work.
 - Listening look: `neon.hearing(amp)` widens the eyes slightly, lifts the
   glow with the speaker's voice level, holds an attentive near-center gaze
-  (saccades stop wandering), and cocks the eye pair in a head tilt (S.tilt
-  rotates the pair a few degrees, random direction per voice) — the tilt is
-  what makes "hearing" legible at a glance vs plain awake. Driven by mic RMS from the session
+  (saccades stop wandering), and draws a cyan glow border inset around the
+  whole screen whose spread/brightness follows the mic level — that rim is
+  what makes "hearing" legible at a glance vs plain awake. (A head-tilt
+  variant was tried first and retired: neat but not right.)
+- Wake-command mechanics, for the record: the words after "Neon" are
+  Apple-transcribed TEXT sent as the session's first user turn — no audio
+  is buffered or replayed; Gemini hears raw audio only from socket open.
+  A PCM ring-buffer flush is the known alternative if transcript quality
+  ever disappoints (costs VAD complexity, saves no latency). Driven by mic RMS from the session
   (~10 Hz, echo-cancelled so Neon's own voice doesn't trigger it) and by
   wake-listener partials while idle. The same RMS signal guards the idle
   timer — input transcription arrives in a clump when the model responds,
