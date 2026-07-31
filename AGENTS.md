@@ -38,7 +38,7 @@ developing and running Neo.
 All Neo source code and project documentation live under:
 
 ```text
-/Users/nick/neo
+/Users/nick/Code/neo
 ```
 
 Platform-installed applications, user preferences, credentials, and runtime
@@ -173,7 +173,7 @@ The first ambient-assistant implementation exists under `eyes/`:
 
 ## Current Decisions
 
-- Neo development stays in `/Users/nick/neo`.
+- Neo development stays in `/Users/nick/Code/neo`.
 - Unrelated development stays on the MacBook Air.
 - The project will favor the existing Command Line Tools and Homebrew setup
   before considering full Xcode.
