@@ -173,9 +173,22 @@ Work toward Neon's spoken conversation lives under `voice/`.
   over the JS bridge (`neon.wake()`, later `neon.speaking(amplitude)`).
   One native audio graph avoids the wake-word listener and voice session
   fighting over the mic and keeps echo cancellation in AVFoundation.
-- Next step: a Swift `VoiceSession` in the shell streaming mic audio to
-  Gemini Live and playing replies, opened on wake word, with the eyes
-  reacting to session state; then camera frames.
+- `voice/gemini-live-audio-test.mjs` — streams a prerecorded 16 kHz WAV as
+  fake mic audio to validate the `realtimeInput.audio` schema and server-side
+  VAD (speech in, silence, spoken reply out). Verified working.
+- `eyes/shell/Sources/NeonShell/VoiceSession.swift` — the real conversation
+  loop: wake word (or W key) opens a Gemini Live WebSocket session, streams
+  mic audio up at 16 kHz (AVAudioConverter from the tap format), plays 24 kHz
+  replies through AVAudioPlayerNode, and enables input voice processing for
+  echo cancellation. Server VAD handles turn-taking and barge-in
+  (`interrupted` flushes the playback queue). On session open the wake
+  listener releases the microphone (`WakeWordListener.stop()`); on close
+  (15 s idle, S key, or socket loss) it takes it back. The eyes hold awake
+  during the session (`neon.hold`) and pulse with output amplitude
+  (`neon.speaking`). On setup the session sends a synthetic turn so Neon
+  greets immediately after the wake phrase.
+- Next: camera frames into the live session; tool calling for personal Mac
+  tools; Claude Code handoff for long tasks.
 
 ## Eyes Proof of Concept
 

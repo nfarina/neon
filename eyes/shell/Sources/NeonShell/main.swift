@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var wakeListener: WakeWordListener?
+    private var voiceSession: VoiceSession?
     private var keyMonitor: Any?
 
     func applicationDidFinishLaunching(_ note: Notification) {
@@ -41,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 13:  // w — manual wake, for testing without the mic
                 self?.triggerWake()
                 return nil
+            case 1:   // s — end the voice session early
+                self?.voiceSession?.close(reason: "manual")
+                return nil
             default:
                 return event
             }
@@ -54,6 +58,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func triggerWake() {
         webView.evaluateJavaScript("window.neon && neon.wake()")
+        startVoiceSession()
+    }
+
+    private func startVoiceSession() {
+        guard voiceSession == nil else { return }
+        NSLog("Neon: starting voice session")
+        wakeListener?.stop()  // hand the microphone to the conversation
+        webView.evaluateJavaScript("window.neon && neon.hold(true)")
+        let session = VoiceSession()
+        session.onAmplitude = { [weak self] amp in
+            self?.webView.evaluateJavaScript("window.neon && neon.speaking(\(amp))")
+        }
+        session.onClosed = { [weak self] in
+            guard let self else { return }
+            NSLog("Neon: voice session ended")
+            self.voiceSession = nil
+            self.webView.evaluateJavaScript("window.neon && neon.hold(false)")
+            self.wakeListener?.start()  // take the microphone back
+        }
+        voiceSession = session
+        session.start()
     }
 
     private func loadEyes() {

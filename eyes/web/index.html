@@ -70,6 +70,8 @@ function runTasks() {
 const AWAKE_SECS = 8;
 let state = "asleep";
 let awakeUntil = 0;
+let hold = false;             // a live voice session keeps the eyes awake
+let speakAmp = 0, speakTarget = 0;  // output-audio level while Neon talks
 
 function blinkOnce(cb) {
   to(S.blink, 0, 0.07, easeInCubic);
@@ -184,7 +186,7 @@ function draw() {
   const eyeW = B * 0.20, eyeH = B * 0.26;
   const sep = B * 0.34;              // distance between eye centers
   const gazePx = B * 0.045;
-  const lum = S.lum.v;
+  const lum = clamp(S.lum.v + speakAmp * 0.3, 0, 1.1);
 
   // breathing & idle bob
   const asleepish = 1 - clamp(S.open.v, 0, 1);
@@ -204,7 +206,7 @@ function draw() {
     const cx = W / 2 + dir * sep / 2 + gx * gazePx;
     const cy = H / 2 + gy * gazePx * 0.8 + bobY;
 
-    let h = eyeH * Math.min(openEff, 1.18);
+    let h = eyeH * Math.min(openEff, 1.18) * (1 + speakAmp * 0.05);
     // slight sympathetic widening as lids close (squash & stretch)
     let w = eyeW * (1 + (1 - Math.min(openEff, 1)) * 0.10);
     // lids close mostly from the top: bias the visible slit downward
@@ -222,7 +224,7 @@ function draw() {
     // wide soft bloom pass
     ctx.save();
     ctx.shadowColor = `hsla(${hue}, 100%, 60%, ${0.35 + 0.3 * lum})`;
-    ctx.shadowBlur = B * 0.10 * (0.4 + 0.6 * lum);
+    ctx.shadowBlur = B * 0.10 * (0.4 + 0.6 * lum) * (1 + speakAmp * 0.6);
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, r);
@@ -246,6 +248,9 @@ function frame(ms) {
   now = ms / 1000;
   runTasks();
   for (const k in S) tickCh(S[k]);
+  speakAmp += (speakTarget - speakAmp) * 0.25;
+  speakTarget *= 0.92;  // decay between amplitude updates
+  if (hold && state === "awake") awakeUntil = now + AWAKE_SECS;
   if (state === "awake" && now > awakeUntil) drowse();
   draw();
   requestAnimationFrame(frame);
@@ -255,6 +260,8 @@ requestAnimationFrame(frame);
 // ============================================================ external API
 window.neon = {
   wake, sleep,
+  hold(b) { hold = !!b; if (!hold && state === "awake") awakeUntil = now + 2; },
+  speaking(a) { speakTarget = Math.min(1, Math.max(0, a)); },
   get state() { return state; },
 };
 addEventListener("keydown", e => {

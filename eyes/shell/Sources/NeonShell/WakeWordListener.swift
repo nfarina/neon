@@ -17,8 +17,10 @@ final class WakeWordListener: NSObject {
     private var task: SFSpeechRecognitionTask?
     private var rollover: Timer?
     private var restarting = false
+    private var active = false
 
     func start() {
+        active = true
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             guard status == .authorized else {
                 NSLog("Neon: speech recognition not authorized (status \(status.rawValue))")
@@ -34,7 +36,21 @@ final class WakeWordListener: NSObject {
         }
     }
 
+    /// Release the microphone (e.g. while a voice session owns it).
+    func stop() {
+        active = false
+        rollover?.invalidate()
+        rollover = nil
+        task?.cancel()
+        task = nil
+        request?.endAudio()
+        request = nil
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+    }
+
     private func begin() {
+        guard active else { return }
         let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         guard let recognizer, recognizer.isAvailable else {
             NSLog("Neon: speech recognizer unavailable")
@@ -51,6 +67,7 @@ final class WakeWordListener: NSObject {
     private func startEngine() {
         guard !engine.isRunning else { return }
         let input = engine.inputNode
+        input.removeTap(onBus: 0)
         let format = input.outputFormat(forBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.request?.append(buffer)
@@ -64,7 +81,8 @@ final class WakeWordListener: NSObject {
     }
 
     private func startSession() {
-        guard let recognizer else { return }
+        guard active, let recognizer else { return }
+        restarting = false
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         if recognizer.supportsOnDeviceRecognition {
@@ -101,7 +119,7 @@ final class WakeWordListener: NSObject {
     }
 
     private func restart(after delay: TimeInterval) {
-        guard !restarting else { return }
+        guard active, !restarting else { return }
         restarting = true
         rollover?.invalidate()
         task?.cancel()
