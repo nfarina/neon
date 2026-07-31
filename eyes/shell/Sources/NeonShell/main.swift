@@ -78,10 +78,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         listener.onWake = { [weak self] command in self?.triggerWake(command: command) }
         listener.onNameHeard = { [weak self] in
             // Pre-wake: eyes open and listen while the speaker finishes.
-            self?.webView.evaluateJavaScript("window.neon && neon.wake()")
+            guard let self, self.voiceSession == nil else { return }
+            self.webView.evaluateJavaScript("window.neon && neon.wake()")
         }
         listener.onWakeAborted = { [weak self] in
-            self?.webView.evaluateJavaScript("window.neon && neon.sleep()")
+            guard let self, self.voiceSession == nil else { return }
+            self.webView.evaluateJavaScript("window.neon && neon.sleep()")
         }
         listener.onTranscript = { [weak self] text in
             self?.wakeHeard = text
@@ -164,7 +166,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startVoiceSession(command: String? = nil) {
         guard voiceSession == nil else { return }
         NSLog("Neon: starting voice session")
-        wakeListener?.stop()  // hand the microphone to the conversation
+        // The wake listener keeps running through the session — AudioHub fans
+        // the mic out to both, and echo cancellation keeps Neon's own voice
+        // out of it. No recognition-restart dead zone at session end, so she
+        // hears her name any time, including mid-doze.
         webView.evaluateJavaScript("window.neon && neon.hold(true)")
         let session = VoiceSession(engine: makeEngine(providerName), firstUtterance: command)
         session.onAmplitude = { [weak self] amp in
@@ -188,7 +193,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // the slow dozing-off animation is reserved for idle silence.
                 self.webView.evaluateJavaScript("window.neon && neon.sleep()")
             }
-            self.wakeListener?.start()  // take the microphone back
         }
         voiceSession = session
         session.start()

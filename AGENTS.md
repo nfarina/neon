@@ -340,9 +340,20 @@ Work toward Neon's spoken conversation lives under `voice/`.
 - Keys: Esc quit · W wake · S end session · D debug overlay · E cycle
   engine · T ghost mode (transparent window/canvas so the eyes float over
   the desktop — for watching Claude Code work underneath) · P cycle state
-  previews (awake → hearing → thinking → speaking → sleep, with synthetic
-  drivers and an on-screen badge — works in plain Chrome too) · Tab (hold)
-  shortcut legend.
+  previews (awake → hearing → thinking → speaking → off, an on-screen badge
+  names each; works in plain Chrome too) · Tab (hold) shortcut legend.
+- The preview is a per-frame override in frame() that pins the renderer to
+  the chosen look; "off" returns control to the live mechanics. (The first
+  one-shot design froze the page: it referenced draw()'s `t` from frame(),
+  and the ReferenceError killed the rAF loop — eyes locked open, all keys
+  seemingly dead. A watchdog now also recovers any "waking" state that
+  misses its hand-off to "awake".)
+- The wake listener runs continuously, including during voice sessions —
+  AudioHub fans the mic to both consumers and AEC keeps Neon's own voice
+  out of recognition. This removes the recognition-restart dead zone right
+  after a session closes, so saying "Neon" works mid-doze, until (and
+  after) the eyes fully close. Pre-wake/abort cues are suppressed while a
+  session is active.
 - Next: more tools (Nick has ideas queued); Claude Code handoff for long
   tasks; wake-phrase accuracy (watch the overlay's "mac hears" line;
   Porcupine remains the fallback plan); long-term memory.
