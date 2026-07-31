@@ -61,7 +61,9 @@ echo "moved claude history -> projects/$NEW_KEY"
 PATCH='s{/Users/nick/neo(?![\w-])}{/Users/nick/Code/neo}g'
 
 perl -pi -e "$PATCH" "$CLAUDE/projects/$NEW_KEY"/*.jsonl(N)
-perl -pi -e "$PATCH" "$CLAUDE/projects/$NEW_KEY"/memory/*.md(N) 2>/dev/null || true
+# guard the glob: perl -pi with zero file args blocks forever reading stdin
+mem_files=("$CLAUDE/projects/$NEW_KEY"/memory/*.md(N))
+(( ${#mem_files} )) && perl -pi -e "$PATCH" "${mem_files[@]}"
 perl -pi -e "$PATCH" "$HOME/.claude.json"
 [[ -f "$CLAUDE/history.jsonl" ]] && perl -pi -e "$PATCH" "$CLAUDE/history.jsonl"
 for f in "$CLAUDE"/sessions/*.json(N); do
