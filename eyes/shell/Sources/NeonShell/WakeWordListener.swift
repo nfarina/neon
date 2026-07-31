@@ -19,9 +19,10 @@ func dbg(_ s: String) {
 // engine (e.g. Picovoice Porcupine) — the only contract is `onWake`.
 
 final class WakeWordListener: NSObject {
-    /// Fired on the wake phrase; the argument is what was said after the
-    /// name (nil if the name was said on its own).
-    var onWake: (String?) -> Void = { _ in }
+    /// Fired on the wake phrase: the transcribed words after the name (nil
+    /// if the name was said alone) and the captured audio of the utterance
+    /// itself, for engines that prefer hearing the real thing.
+    var onWake: (String?, Data?) -> Void = { _, _ in }
     /// Fired the moment the name is spotted mid-utterance — the pre-wake
     /// cue: eyes open and listen while the speaker is still talking.
     var onNameHeard: () -> Void = {}
@@ -58,6 +59,7 @@ final class WakeWordListener: NSObject {
     private var pendingPoll: Timer?
     private var pendingDeadline = Date.distantFuture
     private var pendingNameEnd: Int?  // index past the name when first spotted
+    private var utteranceStartedAt = Date.distantPast  // wall clock of the current burst's first partial
 
     func start() {
         active = true
@@ -105,6 +107,7 @@ final class WakeWordListener: NSObject {
         }
         self.recognizer = recognizer
         AudioHub.shared.startIfNeeded()
+        AudioRing.shared.start()  // wake-utterance capture rides the same hub
         consumerId = AudioHub.shared.addConsumer { [weak self] buffer in
             self?.request?.append(buffer)
         }
@@ -220,6 +223,7 @@ final class WakeWordListener: NSObject {
         // A quiet gap since the last partial marks an utterance boundary.
         if now.timeIntervalSince(lastPartialAt) > Self.utteranceGap {
             baseline = latestWords
+            utteranceStartedAt = now
         }
         lastPartialAt = now
         latestWords = words
@@ -271,7 +275,11 @@ final class WakeWordListener: NSObject {
         let command = latestWords.dropFirst(end).joined(separator: " ")
         NSLog("Neon: wake — command: \"\(command)\"")
         preWakeSignaled = false
-        onWake(command.isEmpty ? nil : command)
+        // The utterance's actual audio, starting a little before the first
+        // partial (the recognizer lags the speech it transcribes).
+        let prelude = command.isEmpty ? nil
+            : AudioRing.shared.audio(since: utteranceStartedAt.addingTimeInterval(-1.5))
+        onWake(command.isEmpty ? nil : command, prelude)
         restart(after: 0.2)  // clear the transcript so it can't re-trigger
         return true
     }

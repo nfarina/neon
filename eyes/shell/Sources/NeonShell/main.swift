@@ -75,7 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let listener = WakeWordListener()
-        listener.onWake = { [weak self] command in self?.triggerWake(command: command) }
+        listener.onWake = { [weak self] command, prelude in
+            self?.triggerWake(command: command, prelude: prelude)
+        }
         listener.onNameHeard = { [weak self] in
             // Pre-wake: eyes open and listen while the speaker finishes.
             guard let self, self.voiceSession == nil else { return }
@@ -105,9 +107,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func triggerWake(command: String? = nil) {
+    private func triggerWake(command: String? = nil, prelude: Data? = nil) {
         webView.evaluateJavaScript("window.neon && neon.wake()")
-        startVoiceSession(command: command)
+        startVoiceSession(command: command, prelude: prelude)
     }
 
     private func toggleDebugOverlay() {
@@ -166,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func startVoiceSession(command: String? = nil) {
+    private func startVoiceSession(command: String? = nil, prelude: Data? = nil) {
         guard voiceSession == nil else { return }
         NSLog("Neon: starting voice session")
         // The wake listener keeps running through the session — AudioHub fans
@@ -174,7 +176,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // out of it. No recognition-restart dead zone at session end, so she
         // hears her name any time, including mid-doze.
         webView.evaluateJavaScript("window.neon && neon.hold(true)")
-        let session = VoiceSession(engine: makeEngine(providerName), firstUtterance: command)
+        let session = VoiceSession(engine: makeEngine(providerName),
+                                   firstUtterance: command, preludeAudio: prelude)
         session.onAmplitude = { [weak self] amp in
             self?.webView.evaluateJavaScript("window.neon && neon.speaking(\(amp))")
         }

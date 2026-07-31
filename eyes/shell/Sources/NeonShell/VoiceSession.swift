@@ -73,13 +73,17 @@ final class VoiceSession: NSObject {
     private var pendingPlaybacks = 0
     private var playbackTailUntil = Date.distantPast
 
-    /// The words spoken after the wake name, if any — sent as the opening
-    /// user turn instead of asking for a greeting.
+    /// The words spoken after the wake name, if any — the opening user turn.
     private let firstUtterance: String?
+    /// The captured 16 kHz audio of that utterance. When present (and the
+    /// engine takes 16 kHz), it's flushed instead of sending the text —
+    /// Gemini hears the real thing rather than Apple's transcription of it.
+    private let preludeAudio: Data?
 
-    init(engine: VoiceEngine, firstUtterance: String? = nil) {
+    init(engine: VoiceEngine, firstUtterance: String? = nil, preludeAudio: Data? = nil) {
         self.engine = engine
         self.firstUtterance = firstUtterance
+        self.preludeAudio = preludeAudio
         self.sendFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16, sampleRate: engine.sendSampleRate,
             channels: 1, interleaved: true)!
@@ -220,10 +224,24 @@ final class VoiceSession: NSObject {
             switch event {
             case .ready:
                 NSLog("Neon voice: session ready")
-                startAudio()
-                let opening = firstUtterance ?? Self.greeting
                 if let cmd = firstUtterance { record("Nick", cmd) }
-                for m in engine.readyMessages(greeting: opening) { sendJSON(m) }
+                if let prelude = preludeAudio, engine.sendSampleRate == 16000,
+                   ProcessInfo.processInfo.environment["NEON_WAKE_AUDIO"] != "0" {
+                    // Flush the wake utterance's real audio (validated by
+                    // gemini-fastflush-test.mjs: server VAD copes with a
+                    // faster-than-realtime burst). Before startAudio so live
+                    // mic chunks can't interleave into the past.
+                    NSLog("Neon voice: flushing %.1fs wake audio",
+                          Double(prelude.count) / 32000.0)
+                    for start in stride(from: 0, to: prelude.count, by: 32000) {
+                        let chunk = prelude.subdata(in: start..<min(start + 32000, prelude.count))
+                        sendJSON(engine.audioMessage(chunk.base64EncodedString()))
+                    }
+                } else {
+                    let opening = firstUtterance ?? Self.greeting
+                    for m in engine.readyMessages(greeting: opening) { sendJSON(m) }
+                }
+                startAudio()
             case .audio(let data):
                 lastAudioAt = Date()
                 if thinkingActive { thinkingActive = false; onThinking(false) }

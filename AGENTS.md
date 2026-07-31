@@ -336,11 +336,17 @@ Work toward Neon's spoken conversation lives under `voice/`.
   whole screen whose spread/brightness follows the mic level — that rim is
   what makes "hearing" legible at a glance vs plain awake. (A head-tilt
   variant was tried first and retired: neat but not right.)
-- Wake-command mechanics, for the record: the words after "Neon" are
-  Apple-transcribed TEXT sent as the session's first user turn — no audio
-  is buffered or replayed; Gemini hears raw audio only from socket open.
-  A PCM ring-buffer flush is the known alternative if transcript quality
-  ever disappoints (costs VAD complexity, saves no latency). Driven by mic RMS from the session
+- Wake-command mechanics: `AudioRing` keeps the last ~20 s of mic audio
+  (16 kHz mono int16); on a wake-with-command, the utterance's *actual
+  audio* (from ~1.5 s before its first recognizer partial, capped at 12 s)
+  is flushed into the Gemini session instead of Apple's transcript — Gemini
+  hears the real thing, tone and all. Faster-than-realtime flush is fine
+  with server VAD (`voice/gemini-fastflush-test.mjs`: 3 s flushed
+  instantly, clean transcription + reply). The flush happens before
+  startAudio() so live mic chunks can't interleave into the past. Apple's
+  text is still used for the conversation log and the overlay, and remains
+  the fallback (`NEON_WAKE_AUDIO=0`, non-16 kHz engines, bare-name wakes,
+  which still get the text greeting instruction). Driven by mic RMS from the session
   (~10 Hz, echo-cancelled so Neon's own voice doesn't trigger it) and by
   wake-listener partials while idle. The same RMS signal guards the idle
   timer — input transcription arrives in a clump when the model responds,
