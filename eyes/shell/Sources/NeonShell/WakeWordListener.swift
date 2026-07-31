@@ -180,7 +180,7 @@ final class WakeWordListener: NSObject {
     /// Words the recognizer produces for "neon". It's a dictionary word so
     /// it's usually right; the rest are observed or plausible mis-hearings.
     private static let nameWords: Set<String> = [
-        "neon", "neons", "neo", "nion", "nian", "neyon", "leon",
+        "neon", "neons", "neo", "nion", "nian", "neyon", "leon", "nia",
     ]
     /// "hey neon" still works; the recognizer sometimes fuses it into one
     /// token — observed live: "Hey Neon" -> "Henon".

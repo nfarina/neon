@@ -2,7 +2,7 @@
 // fake clock. Mirrors the real implementation (keep in sync by hand).
 import Foundation
 
-let nameWords: Set<String> = ["neon", "neons", "neo", "nion", "nian", "neyon", "leon"]
+let nameWords: Set<String> = ["neon", "neons", "neo", "nion", "nian", "neyon", "leon", "nia"]
 let heyWords: Set<String> = ["hey", "hay", "hi", "ok", "okay"]
 let fusedWords: Set<String> = ["henon", "heynon", "hanon", "heneon", "haynon"]
 let utteranceGap = 0.7
@@ -113,6 +113,8 @@ run("late revision", [(1.0, "Neon set a"), (1.3, "Neon set a timer"), (1.6, "Neo
     expect: "set a timer for ten minutes")
 // apostrophes survive tokenizing
 run("apostrophe", [(1.0, "Neon what's the weather")], expect: "what's the weather")
+// "Nia" nickname wakes too
+run("nia nickname", [(1.0, "Nia what time is it")], expect: "what time is it")
 // LONG QUESTION: recognizer revises words BEFORE the name mid-capture,
 // shifting the common-prefix boundary — the stored name position recovers it
 run("baseline revised during long question",
