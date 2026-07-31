@@ -102,7 +102,7 @@ session lifecycle, response channel, and degree of autonomy are undecided.
 
 ## Current Machine State
 
-As of July 30, 2026:
+As of July 31, 2026:
 
 - Apple Command Line Tools are installed.
 - Homebrew is installed and available for additional tools.
@@ -132,6 +132,9 @@ As of July 30, 2026:
 - Ramblr is installed and configured with Nick's existing preferences and API
   keys.
 - AppKeys is installed with Nick's existing set of application hotkeys.
+- Claude Usage 3.1.1 is installed. Its profiles, per-profile credentials,
+  preferences, and usage history were imported from the MacBook Air through
+  the `HamedElfayome.Claude-Usage` UserDefaults domain.
 - The source for Nick's `allow-chrome-mcp` helper is tracked at
   `tools/allow-chrome-mcp`. It is installed as the user LaunchAgent
   `com.nfarina.allow-chrome-mcp` and requires macOS Accessibility permission.
