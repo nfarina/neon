@@ -321,9 +321,23 @@ Work toward Neon's spoken conversation lives under `voice/`.
   cross-session: "the magic number is 47" recalled after a sleep/wake
   cycle. Long-term memory (summarization, Claude Code involvement) is
   future work.
+- Listening look: `neon.hearing(amp)` widens the eyes slightly, lifts the
+  glow with the speaker's voice level, and holds an attentive near-center
+  gaze (saccades stop wandering). Driven by mic RMS from the session
+  (~10 Hz, echo-cancelled so Neon's own voice doesn't trigger it) and by
+  wake-listener partials while idle. The same RMS signal guards the idle
+  timer — input transcription arrives in a clump when the model responds,
+  not while Nick talks, so mic energy is the only live "he's mid-sentence"
+  signal (this once put her to sleep mid-question).
+- Pre-wake: the instant the matcher spots the name (`onNameHeard`), the
+  eyes open and listen while the speaker finishes — no Gemini connection
+  yet. The utterance end then opens the session with the captured command;
+  if the name candidate dies in a transcript revision (`onWakeAborted`),
+  the eyes simply close again, so the pre-wake state always resolves.
 - Keys: Esc quit · W wake · S end session · D debug overlay · E cycle
   engine · T ghost mode (transparent window/canvas so the eyes float over
-  the desktop — for watching Claude Code work underneath).
+  the desktop — for watching Claude Code work underneath) · Tab (hold)
+  shortcut legend.
 - Next: more tools (Nick has ideas queued); Claude Code handoff for long
   tasks; wake-phrase accuracy (watch the overlay's "mac hears" line;
   Porcupine remains the fallback plan); long-term memory.

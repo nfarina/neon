@@ -6,6 +6,9 @@ import Foundation
 // AudioHub, plays replies through it, and meters token usage into costs.
 final class VoiceSession: NSObject {
     var onAmplitude: (Float) -> Void = { _ in }
+    /// Voice-level mic energy (0–1), ~10 Hz while someone is talking.
+    /// Called from the audio thread. Drives the eyes' listening look.
+    var onHearing: (Float) -> Void = { _ in }
     /// Fires true when the model starts reasoning (thought parts streaming)
     /// and false when its spoken reply begins — drives the eyes' indicator.
     var onThinking: (Bool) -> Void = { _ in }
@@ -47,6 +50,12 @@ final class VoiceSession: NSObject {
     private var sleepTimer: Timer?
     private var lastAudioAt = Date.distantPast  // last audio *received* (chunks may trail the tool call)
     private var thinkingActive = false
+    // Last time the mic carried voice-level energy. Input transcription
+    // arrives in a clump when the model responds, not while Nick talks, so
+    // this is the only live signal that he's mid-sentence. (Echo-cancelled
+    // input: Neon's own voice can't keep her awake.)
+    private var lastVoiceAt = Date.distantPast
+    private var lastHearingSent = Date.distantPast
     private let sessionStart = Date()
     private var usage = VoiceUsage()
     private var heard = ""  // running input transcript, for the debug overlay
@@ -309,7 +318,18 @@ final class VoiceSession: NSObject {
             return buffer
         }
         guard convError == nil, out.frameLength > 0, let ch = out.int16ChannelData else { return }
-        let data = Data(bytes: ch[0], count: Int(out.frameLength) * 2)
+        var acc: Int64 = 0
+        let n = Int(out.frameLength)
+        for i in 0..<n { let v = Int64(ch[0][i]); acc += v * v }
+        let rms = sqrt(Double(acc) / Double(n))
+        if rms > 350 {  // ~1% of full scale ≈ speech, not room hum
+            lastVoiceAt = Date()
+            if Date().timeIntervalSince(lastHearingSent) > 0.1 {
+                lastHearingSent = Date()
+                onHearing(Float(min(1, rms / 2500)))
+            }
+        }
+        let data = Data(bytes: ch[0], count: n * 2)
         sendJSON(engine.audioMessage(data.base64EncodedString()))
     }
 
@@ -357,8 +377,13 @@ final class VoiceSession: NSObject {
             self.idleTimer?.invalidate()
             self.idleTimer = Timer.scheduledTimer(withTimeInterval: Self.idleSeconds, repeats: false) { [weak self] _ in
                 guard let self else { return }
-                // Never time out while a reply is still playing.
-                if self.pendingPlaybacks > 0 { self.bumpIdle() } else { self.close(reason: "idle") }
+                // Never time out while a reply is still playing or while
+                // someone in the room is mid-sentence.
+                if self.pendingPlaybacks > 0 || Date().timeIntervalSince(self.lastVoiceAt) < 1.5 {
+                    self.bumpIdle()
+                } else {
+                    self.close(reason: "idle")
+                }
             }
         }
     }

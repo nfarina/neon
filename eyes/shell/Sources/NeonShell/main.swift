@@ -73,7 +73,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let listener = WakeWordListener()
         listener.onWake = { [weak self] command in self?.triggerWake(command: command) }
-        listener.onTranscript = { [weak self] text in self?.wakeHeard = text }
+        listener.onNameHeard = { [weak self] in
+            // Pre-wake: eyes open and listen while the speaker finishes.
+            self?.webView.evaluateJavaScript("window.neon && neon.wake()")
+        }
+        listener.onWakeAborted = { [weak self] in
+            self?.webView.evaluateJavaScript("window.neon && neon.sleep()")
+        }
+        listener.onTranscript = { [weak self] text in
+            self?.wakeHeard = text
+            // A partial arriving means someone is talking — listening cue.
+            self?.webView.evaluateJavaScript("window.neon && neon.hearing(0.55)")
+        }
         listener.start()
         wakeListener = listener
 
@@ -157,6 +168,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         session.onThinking = { [weak self] on in
             self?.webView.evaluateJavaScript("window.neon && neon.thinking(\(on))")
+        }
+        session.onHearing = { [weak self] amp in
+            DispatchQueue.main.async {  // arrives on the audio thread
+                self?.webView.evaluateJavaScript("window.neon && neon.hearing(\(amp))")
+            }
         }
         session.onClosed = { [weak self] reason in
             guard let self else { return }

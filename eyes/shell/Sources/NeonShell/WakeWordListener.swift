@@ -22,8 +22,16 @@ final class WakeWordListener: NSObject {
     /// Fired on the wake phrase; the argument is what was said after the
     /// name (nil if the name was said on its own).
     var onWake: (String?) -> Void = { _ in }
+    /// Fired the moment the name is spotted mid-utterance — the pre-wake
+    /// cue: eyes open and listen while the speaker is still talking.
+    var onNameHeard: () -> Void = {}
+    /// The name candidate didn't survive (transcript revision); a pre-wake
+    /// that onNameHeard signaled should stand down.
+    var onWakeAborted: () -> Void = {}
     /// Streams the recognizer's running transcript (for the debug overlay).
     var onTranscript: (String) -> Void = { _ in }
+
+    private var preWakeSignaled = false
 
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -75,6 +83,7 @@ final class WakeWordListener: NSObject {
         rollover = nil
         pendingPoll?.invalidate()
         pendingPoll = nil
+        preWakeSignaled = false
         task?.cancel()
         task = nil
         request?.endAudio()
@@ -216,6 +225,8 @@ final class WakeWordListener: NSObject {
         guard pendingPoll == nil else { return }  // already waiting for the utterance to finish
         if Self.nameEnd(in: words, from: Self.commonPrefix(baseline, words)) != nil {
             dbg("name candidate; waiting for end of utterance")
+            preWakeSignaled = true
+            onNameHeard()
             pendingDeadline = now.addingTimeInterval(Self.maxCommandWait)
             pendingPoll = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
                 guard let self else { return }
@@ -239,10 +250,12 @@ final class WakeWordListener: NSObject {
         let cut = Self.commonPrefix(baseline, latestWords)
         guard let end = Self.nameEnd(in: latestWords, from: cut) else {
             baseline = latestWords  // utterance consumed; don't rematch it later
+            if preWakeSignaled { preWakeSignaled = false; onWakeAborted() }
             return false
         }
         let command = latestWords.dropFirst(end).joined(separator: " ")
         NSLog("Neon: wake — command: \"\(command)\"")
+        preWakeSignaled = false
         onWake(command.isEmpty ? nil : command)
         restart(after: 0.2)  // clear the transcript so it can't re-trigger
         return true
