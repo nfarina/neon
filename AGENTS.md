@@ -399,9 +399,29 @@ Work toward Neon's spoken conversation lives under `voice/`.
   after a session closes, so saying "Neon" works mid-doze, until (and
   after) the eyes fully close. Pre-wake/abort cues are suppressed while a
   session is active.
-- Next: more tools (Nick has ideas queued); Claude Code handoff for long
-  tasks; wake-phrase accuracy (watch the overlay's "mac hears" line;
-  Porcupine remains the fallback plan); long-term memory.
+- openWakeWord runs in-process alongside the SFSpeech matcher
+  (`OpenWakeListener.swift`, ONNX Runtime via Microsoft's SwiftPM package —
+  the only external dependency; module `OnnxRuntimeBindings`). Models in
+  `~/.config/neon/oww/`: melspectrogram.onnx + embedding_model.onnx (shared
+  feature extractors from the openWakeWord v0.5.1 release) plus any other
+  .onnx as the wake model — currently `hey_jarvis_v0.1` for trial; drop in
+  a trained `hey_neon.onnx` and it's picked up automatically. Pipeline
+  details that MATTER (each was a debugged failure): melspectrogram needs a
+  480-sample lookback carried across 1280-sample chunks (keep the last 8
+  frames per chunk) or the phrase pattern is shredded at seams; buffers
+  must be primed with ~4 s of random noise, NOT zeros — zero priming makes
+  any speech score ~0.99 while it drains; skip the first few scores after
+  priming. mel transform is x/10+2; embeddings are 76-frame windows stride
+  8; wake model scores the last 16. Offline harness:
+  `NEON_OWW_TEST=file16k.wav .build/release/NeonShell` prints scores —
+  validated 0.998+ on three `say` voices, 0.00–0.01 on negatives incl.
+  "Hey there John". On detection the session opens with ring audio from
+  2 s before the phrase (`preludeFrom`), so the model hears the summons
+  and whatever follows, with no gap during connect.
+- Next: train "Hey Neon" (Colab, then drop hey_neon.onnx into
+  ~/.config/neon/oww/); more tools; Claude Code handoff for long tasks;
+  long-term memory; retire the SFSpeech wake path once the custom model
+  proves out (it stays as transcript/overlay/voice-activity source).
 
 ## Eyes Proof of Concept
 

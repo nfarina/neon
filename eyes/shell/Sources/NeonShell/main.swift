@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var wakeListener: WakeWordListener?
+    private var owwListener: OpenWakeListener?
     private var voiceSession: VoiceSession?
     private var keyMonitor: Any?
     private var debugVisible = false
@@ -101,6 +102,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         listener.start()
         wakeListener = listener
 
+        // openWakeWord runs alongside the SFSpeech matcher: it spots its
+        // phrase mid-stream with no silence bookkeeping. On detection the
+        // session opens with ring audio from just before the phrase, so the
+        // model hears the summons and whatever follows it live.
+        let oww = OpenWakeListener()
+        oww.onDetect = { [weak self] name in
+            guard let self, self.voiceSession == nil else { return }
+            NSLog("Neon: openWakeWord detection (\(name))")
+            self.triggerWake(preludeFrom: Date().addingTimeInterval(-2.0))
+        }
+        oww.start()
+        owwListener = oww
+
         // Debug hook: NEON_AUTOWAKE=1 starts a voice session shortly after
         // launch, so the full audio path is testable without speaking.
         if ProcessInfo.processInfo.environment["NEON_AUTOWAKE"] == "1" {
@@ -110,9 +124,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func triggerWake(command: String? = nil, prelude: Data? = nil) {
+    private func triggerWake(command: String? = nil, prelude: Data? = nil,
+                             preludeFrom: Date? = nil) {
         webView.evaluateJavaScript("window.neon && neon.wake()")
-        startVoiceSession(command: command, prelude: prelude)
+        startVoiceSession(command: command, prelude: prelude, preludeFrom: preludeFrom)
     }
 
     private func toggleDebugOverlay() {
@@ -171,7 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func startVoiceSession(command: String? = nil, prelude: Data? = nil) {
+    private func startVoiceSession(command: String? = nil, prelude: Data? = nil,
+                                   preludeFrom: Date? = nil) {
         guard voiceSession == nil else { return }
         NSLog("Neon: starting voice session")
         // The wake listener keeps running through the session — AudioHub fans
@@ -180,7 +196,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // hears her name any time, including mid-doze.
         webView.evaluateJavaScript("window.neon && neon.hold(true)")
         let session = VoiceSession(engine: makeEngine(providerName),
-                                   firstUtterance: command, preludeAudio: prelude)
+                                   firstUtterance: command, preludeAudio: prelude,
+                                   preludeFrom: preludeFrom)
         session.onAmplitude = { [weak self] amp in
             self?.webView.evaluateJavaScript("window.neon && neon.speaking(\(amp))")
         }
@@ -232,6 +249,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+}
+
+// Offline pipeline check: NEON_OWW_TEST=file.wav runs the wake models over
+// a 16 kHz mono WAV and prints scores, no app launch.
+if let wav = ProcessInfo.processInfo.environment["NEON_OWW_TEST"] {
+    OpenWakeListener.offlineTest(wavPath: wav)
+    exit(0)
 }
 
 let app = NSApplication.shared

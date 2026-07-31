@@ -93,11 +93,17 @@ final class VoiceSession: NSObject {
     /// engine takes 16 kHz), it's flushed instead of sending the text —
     /// Gemini hears the real thing rather than Apple's transcription of it.
     private let preludeAudio: Data?
+    /// Alternative: flush everything the AudioRing captured since this
+    /// moment (openWakeWord path — the ring keeps recording between the
+    /// detection and the socket opening, so nothing said is lost).
+    private let preludeFrom: Date?
 
-    init(engine: VoiceEngine, firstUtterance: String? = nil, preludeAudio: Data? = nil) {
+    init(engine: VoiceEngine, firstUtterance: String? = nil, preludeAudio: Data? = nil,
+         preludeFrom: Date? = nil) {
         self.engine = engine
         self.firstUtterance = firstUtterance
         self.preludeAudio = preludeAudio
+        self.preludeFrom = preludeFrom
         self.sendFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16, sampleRate: engine.sendSampleRate,
             channels: 1, interleaved: true)!
@@ -246,7 +252,9 @@ final class VoiceSession: NSObject {
             case .ready:
                 NSLog("Neon voice: session ready")
                 if let cmd = firstUtterance { record("Nick", cmd) }
-                if let prelude = preludeAudio, engine.sendSampleRate == 16000,
+                let resolvedPrelude = preludeAudio
+                    ?? preludeFrom.map { AudioRing.shared.audio(since: $0) }
+                if let prelude = resolvedPrelude, engine.sendSampleRate == 16000,
                    ProcessInfo.processInfo.environment["NEON_WAKE_AUDIO"] != "0" {
                     // Flush the wake utterance's real audio (validated by
                     // gemini-fastflush-test.mjs: server VAD copes with a
