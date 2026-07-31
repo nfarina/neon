@@ -56,6 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 14:  // e — cycle voice engine (takes effect next session)
                 self?.cycleEngine()
                 return nil
+            case 17:  // t — ghost mode: transparent background over the desktop
+                self?.toggleTransparency()
+                return nil
             default:
                 return event
             }
@@ -92,6 +95,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.pushStats()
             }
         }
+    }
+
+    private var transparentMode = false
+
+    private func toggleTransparency() {
+        transparentMode.toggle()
+        window.isOpaque = !transparentMode
+        window.backgroundColor = transparentMode ? .clear : .black
+        window.hasShadow = false
+        // WKWebView has no public drawsBackground on macOS; KVC is the
+        // long-standing way to make it composite transparently.
+        webView.setValue(!transparentMode, forKey: "drawsBackground")
+        webView.evaluateJavaScript("window.neon && neon.transparent(\(transparentMode))")
     }
 
     private func cycleEngine() {

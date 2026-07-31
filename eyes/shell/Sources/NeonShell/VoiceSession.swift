@@ -44,6 +44,8 @@ final class VoiceSession: NSObject {
     private let sessionStart = Date()
     private var usage = VoiceUsage()
     private var heard = ""  // running input transcript, for the debug overlay
+    private var camera: CameraFeed?
+    private var transcript: [(speaker: String, text: String)] = []
 
     // Playback bookkeeping; also drives the half-duplex fallback when the
     // hub's echo cancellation is unavailable.
@@ -77,7 +79,18 @@ final class VoiceSession: NSObject {
         ws = task
         task.resume()
         receiveLoop()
-        for msg in engine.openMessages(system: Self.system) { sendJSON(msg) }
+        var system = Self.system
+        if let recent = ConversationLog.shared.recentContext() {
+            system += """
+
+
+                Recent conversations with Nick, oldest first — use them for \
+                continuity (things he told you, asked for, or mentioned) but \
+                don't recite or reference them unprompted:
+                \(recent)
+                """
+        }
+        for msg in engine.openMessages(system: system) { sendJSON(msg) }
         bumpIdle()
         NSLog("Neon voice: connecting to \(engine.name) (\(engine.model))")
     }
@@ -87,6 +100,9 @@ final class VoiceSession: NSObject {
         closed = true
         NSLog("Neon voice: closing (\(reason)) — \(costLine())")
         idleTimer?.invalidate()
+        camera?.stop()
+        camera = nil
+        ConversationLog.shared.append(turns: transcript)
         AudioHub.shared.removeConsumer(consumerId)
         consumerId = nil
         AudioHub.shared.player.stop()
@@ -123,6 +139,7 @@ final class VoiceSession: NSObject {
             ["session", String(format: "%d:%02d", elapsed / 60, elapsed % 60)],
             ["audio in/out", "\(usage.audioIn)/\(usage.audioOut) tok"],
             ["text in/out", "\(usage.textIn)/\(usage.textOut) tok"],
+            ["video in", "\(usage.imageIn) tok"],
             ["session cost", String(format: "$%.4f", currentCost())],
             ["lifetime", String(format: "$%.3f", UsageStore.shared.total + currentCost())],
             ["hears", String(heard.suffix(70))],
@@ -167,6 +184,7 @@ final class VoiceSession: NSObject {
                 NSLog("Neon voice: session ready")
                 startAudio()
                 let opening = firstUtterance ?? Self.greeting
+                if let cmd = firstUtterance { record("Nick", cmd) }
                 for m in engine.readyMessages(greeting: opening) { sendJSON(m) }
             case .audio(let data):
                 enqueuePlayback(data)
@@ -174,6 +192,7 @@ final class VoiceSession: NSObject {
             case .inputText(let t):
                 NSLog("Neon voice: heard: \(t)")
                 heard += heard.isEmpty || t.hasPrefix(" ") ? t : " \(t)"
+                record("Nick", t)
                 bumpIdle()
             case .outputText(let t):
                 NSLog("Neon voice: saying: \(t)")
@@ -184,6 +203,8 @@ final class VoiceSession: NSObject {
                     NSLog("Neon voice: tool-call leak in speech; treating as \(sleepToolName)")
                     sleepRequested = true
                     if pendingPlaybacks <= 0 { close(reason: "tool") }
+                } else {
+                    record("Neon", t)
                 }
             case .toolCall(let name):
                 NSLog("Neon voice: tool call: \(name)")
@@ -203,6 +224,15 @@ final class VoiceSession: NSObject {
         }
     }
 
+    private func record(_ speaker: String, _ text: String) {
+        if transcript.last?.speaker == speaker {
+            transcript[transcript.count - 1].text += text.hasPrefix(" ") || text.isEmpty
+                ? text : " \(text)"
+        } else {
+            transcript.append((speaker, text))
+        }
+    }
+
     // MARK: - Audio
 
     private func startAudio() {
@@ -218,6 +248,19 @@ final class VoiceSession: NSObject {
         consumerId = hub.addConsumer { [weak self] buffer in
             self?.sendMic(buffer)
         }
+        startCamera()
+    }
+
+    private func startCamera() {
+        guard engine.videoMessage("") != nil,  // engine takes video at all
+              ProcessInfo.processInfo.environment["NEON_CAMERA"] != "0" else { return }
+        let cam = CameraFeed()
+        cam.onFrame = { [weak self] b64 in
+            guard let self, !self.closed, let msg = self.engine.videoMessage(b64) else { return }
+            self.sendJSON(msg)
+        }
+        camera = cam
+        cam.start()
     }
 
     private func sendMic(_ buffer: AVAudioPCMBuffer) {
@@ -290,6 +333,42 @@ final class VoiceSession: NSObject {
                 if self.pendingPlaybacks > 0 { self.bumpIdle() } else { self.close(reason: "idle") }
             }
         }
+    }
+}
+
+// MARK: - Short-term memory
+
+// Cross-session continuity: every session's transcript is appended to a
+// rolling log, and the tail of that log is injected into the next session's
+// system prompt. Crude but effective — "remember the number 47" survives a
+// sleep/wake cycle. Long-term (summarized) memory can come later.
+final class ConversationLog {
+    static let shared = ConversationLog()
+    private let path = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".config/neon/conversations.md")
+
+    func append(turns: [(speaker: String, text: String)]) {
+        let clean = turns.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard !clean.isEmpty else { return }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "EEEE MMM d, h:mm a"
+        var block = "\n## \(fmt.string(from: Date()))\n"
+        for t in clean {
+            block += "\(t.speaker): \(t.text.trimmingCharacters(in: .whitespacesAndNewlines))\n"
+        }
+        let existing = (try? String(contentsOf: path, encoding: .utf8)) ?? ""
+        // Keep the file itself bounded; the distant past is long-term memory's job.
+        let combined = String((existing + block).suffix(30_000))
+        try? combined.write(to: path, atomically: true, encoding: .utf8)
+    }
+
+    /// The tail of the log, for injection into a new session's prompt.
+    func recentContext(maxChars: Int = 2500) -> String? {
+        guard let text = try? String(contentsOf: path, encoding: .utf8),
+              !text.isEmpty else { return nil }
+        let tail = String(text.suffix(maxChars))
+        // Cut at a line boundary so we don't start mid-sentence.
+        return tail.firstIndex(of: "\n").map { String(tail[$0...]) } ?? tail
     }
 }
 

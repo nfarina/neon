@@ -81,6 +81,7 @@ let state = "asleep";
 let awakeUntil = 0;
 let hold = false;             // a live voice session keeps the eyes awake
 let speakAmp = 0, speakTarget = 0;  // output-audio level while Neon talks
+let transparent = false;      // ghost mode: eyes float over whatever's behind
 
 function blinkOnce(cb) {
   to(S.blink, 0, 0.07, easeInCubic);
@@ -182,14 +183,18 @@ function draw() {
   const t = now;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-  // background with a soft vignette
-  ctx.fillStyle = "#04060a";
-  ctx.fillRect(0, 0, W, H);
-  const vg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
-  vg.addColorStop(0, "rgba(16,24,32,0.55)");
-  vg.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, W, H);
+  // background with a soft vignette (or see-through in ghost mode)
+  if (transparent) {
+    ctx.clearRect(0, 0, W, H);
+  } else {
+    ctx.fillStyle = "#04060a";
+    ctx.fillRect(0, 0, W, H);
+    const vg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+    vg.addColorStop(0, "rgba(16,24,32,0.55)");
+    vg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+  }
 
   const B = Math.min(W, H);          // base scale
   const eyeW = B * 0.20, eyeH = B * 0.26;
@@ -272,6 +277,11 @@ window.neon = {
   hold(b) { hold = !!b; if (!hold && state === "awake") awakeUntil = now + 2; },
   speaking(a) { speakTarget = Math.min(1, Math.max(0, a)); },
   debug(show) { document.getElementById("debug").style.display = show ? "flex" : "none"; },
+  transparent(on) {
+    transparent = !!on;
+    document.documentElement.style.background = on ? "transparent" : "";
+    document.body.style.background = on ? "transparent" : "";
+  },
   stats(pairs) {
     document.getElementById("debug").innerHTML = pairs
       .map(([k, v]) => `<span>${k}<b>${v}</b></span>`)

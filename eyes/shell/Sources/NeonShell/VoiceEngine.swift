@@ -6,10 +6,11 @@ import Foundation
 // in voice/ (gemini-live-audio-test.mjs, openai-realtime-test.mjs).
 
 struct VoiceUsage {
-    var audioIn = 0, audioOut = 0, textIn = 0, textOut = 0, cachedIn = 0
+    var audioIn = 0, audioOut = 0, textIn = 0, textOut = 0, cachedIn = 0, imageIn = 0
     mutating func add(_ o: VoiceUsage) {
         audioIn += o.audioIn; audioOut += o.audioOut
-        textIn += o.textIn; textOut += o.textOut; cachedIn += o.cachedIn
+        textIn += o.textIn; textOut += o.textOut
+        cachedIn += o.cachedIn; imageIn += o.imageIn
     }
 }
 
@@ -47,6 +48,12 @@ protocol VoiceEngine {
     func parse(_ msg: [String: Any]) -> [VoiceEvent]
     /// Estimated cost in dollars for the given usage / elapsed session time.
     func cost(_ u: VoiceUsage, elapsed: TimeInterval) -> Double
+    /// Wire message for one JPEG camera frame; nil if the engine takes no video.
+    func videoMessage(_ base64: String) -> [String: Any]?
+}
+
+extension VoiceEngine {
+    func videoMessage(_ base64: String) -> [String: Any]? { nil }
 }
 
 // MARK: - Gemini Live
@@ -96,6 +103,10 @@ struct GeminiEngine: VoiceEngine {
         ["realtimeInput": ["audio": ["mimeType": "audio/pcm;rate=16000", "data": base64]]]
     }
 
+    func videoMessage(_ base64: String) -> [String: Any]? {
+        ["realtimeInput": ["video": ["mimeType": "image/jpeg", "data": base64]]]
+    }
+
     func parse(_ msg: [String: Any]) -> [VoiceEvent] {
         var events: [VoiceEvent] = []
         if msg["setupComplete"] != nil { events.append(.ready) }
@@ -112,6 +123,7 @@ struct GeminiEngine: VoiceEngine {
                     let count = d["tokenCount"] as? Int ?? 0
                     let modality = d["modality"] as? String ?? ""
                     if modality == "AUDIO" { if isInput { u.audioIn += count } else { u.audioOut += count } }
+                    else if modality == "IMAGE" || modality == "VIDEO" { u.imageIn += count }
                     else { if isInput { u.textIn += count } else { u.textOut += count } }
                 }
             }
@@ -140,7 +152,8 @@ struct GeminiEngine: VoiceEngine {
     }
 
     func cost(_ u: VoiceUsage, elapsed: TimeInterval) -> Double {
-        (Double(u.audioIn) * audioInRate + Double(u.audioOut) * audioOutRate
+        // Live API prices image/video input at the audio rate.
+        (Double(u.audioIn + u.imageIn) * audioInRate + Double(u.audioOut) * audioOutRate
             + Double(u.textIn) * textInRate + Double(u.textOut) * textOutRate) / 1_000_000
     }
 }

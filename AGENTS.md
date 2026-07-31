@@ -282,10 +282,25 @@ Work toward Neon's spoken conversation lives under `voice/`.
 - `NEON_GREETING` overrides the synthetic first turn — used with
   `NEON_AUTOWAKE=1` to solo-test behaviors (e.g. a natural goodbye greeting
   verifies the whole tool-sleep path without speaking).
-- Next: camera frames into the live session (Gemini supports 1 FPS video);
-  more tools (Nick has ideas queued); Claude Code handoff for long tasks;
-  wake-phrase accuracy (fast "heyneon" often misses — watch the overlay's
-  "mac hears" line; Porcupine remains the fallback plan).
+- Camera: `CameraFeed.swift` captures 1 FPS VGA JPEGs while a session is
+  open (never otherwise) and sends them as `realtimeInput.video` to Gemini
+  engines (OpenAI engine takes no video; `NEON_CAMERA=0` disables). Image
+  tokens are metered at the audio rate and shown in the overlay ("video
+  in"). First camera use prompts for TCC approval — the prompt only shows
+  when the app is launched normally (`open`), not from a background shell.
+- Short-term memory: `ConversationLog` appends each session's transcript
+  (from the input/output transcription events) to
+  `~/.config/neon/conversations.md`, capped at 30k chars; the last ~2.5k
+  chars are injected into every new session's system prompt. Verified
+  cross-session: "the magic number is 47" recalled after a sleep/wake
+  cycle. Long-term memory (summarization, Claude Code involvement) is
+  future work.
+- Keys: Esc quit · W wake · S end session · D debug overlay · E cycle
+  engine · T ghost mode (transparent window/canvas so the eyes float over
+  the desktop — for watching Claude Code work underneath).
+- Next: more tools (Nick has ideas queued); Claude Code handoff for long
+  tasks; wake-phrase accuracy (watch the overlay's "mac hears" line;
+  Porcupine remains the fallback plan); long-term memory.
 
 ## Eyes Proof of Concept
 

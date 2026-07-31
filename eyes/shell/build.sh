@@ -29,6 +29,8 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
   <string>Neon listens for the wake phrase "Hey Neon".</string>
   <key>NSSpeechRecognitionUsageDescription</key>
   <string>Neon uses on-device speech recognition to hear "Hey Neon".</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Neon can see the kitchen through the camera during conversations.</string>
 </dict>
 </plist>
 EOF
