@@ -54,6 +54,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         listener.onWake = { [weak self] in self?.triggerWake() }
         listener.start()
         wakeListener = listener
+
+        // Debug hook: NEON_AUTOWAKE=1 starts a voice session shortly after
+        // launch, so the full audio path is testable without speaking.
+        if ProcessInfo.processInfo.environment["NEON_AUTOWAKE"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                self?.triggerWake()
+            }
+        }
     }
 
     private func triggerWake() {

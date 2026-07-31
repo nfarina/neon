@@ -20,17 +20,16 @@ final class VoiceSession: NSObject {
     private static let idleSeconds: TimeInterval = 15
 
     private var ws: URLSessionWebSocketTask?
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
+    private var consumerId: UUID?
     private var inputConverter: AVAudioConverter?
     private let sendFormat = AVAudioFormat(
         commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
     private let playFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
     private var idleTimer: Timer?
     private var closed = false
-    // Half-duplex: suppress mic upload while Neon is speaking so it does not
-    // hear itself (voice-processing AEC fails to init on this machine with
-    // error -10875; revisit for true barge-in support).
+    // Playback bookkeeping. When the hub's echo cancellation is active the
+    // mic streams continuously (true barge-in); when it is not, these drive
+    // the half-duplex fallback that mutes the mic while Neon speaks.
     private var pendingPlaybacks = 0
     private var playbackTailUntil = Date.distantPast
 
@@ -64,9 +63,9 @@ final class VoiceSession: NSObject {
         closed = true
         NSLog("Neon voice: closing (\(reason))")
         idleTimer?.invalidate()
-        player.stop()
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        AudioHub.shared.removeConsumer(consumerId)
+        consumerId = nil
+        AudioHub.shared.player.stop()  // the shared engine keeps running
         ws?.cancel(with: .normalClosure, reason: nil)
         DispatchQueue.main.async { self.onClosed() }
     }
@@ -130,11 +129,11 @@ final class VoiceSession: NSObject {
         }
         guard let sc = msg["serverContent"] as? [String: Any] else { return }
         if sc["interrupted"] != nil {
-            // Server-side barge-in: drop everything queued and keep listening.
-            player.stop()
+            // Barge-in: drop everything queued and keep listening.
+            AudioHub.shared.player.stop()
             pendingPlaybacks = 0
             playbackTailUntil = Date.distantPast
-            player.play()
+            AudioHub.shared.player.play()
         }
         if let turn = sc["modelTurn"] as? [String: Any],
            let parts = turn["parts"] as? [[String: Any]] {
@@ -159,29 +158,26 @@ final class VoiceSession: NSObject {
     // MARK: - Audio
 
     private func startAudio() {
-        let input = engine.inputNode
-        let tapFormat = input.outputFormat(forBus: 0)
-        inputConverter = AVAudioConverter(from: tapFormat, to: sendFormat)
-        engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: playFormat)
-        input.installTap(onBus: 0, bufferSize: 2048, format: tapFormat) { [weak self] buffer, _ in
-            self?.sendMic(buffer)
-        }
-        engine.prepare()
-        do {
-            try engine.start()
-        } catch {
-            NSLog("Neon voice: audio engine failed: \(error.localizedDescription)")
-            close(reason: "audio engine")
+        let hub = AudioHub.shared
+        hub.startIfNeeded()
+        guard let tapFormat = hub.tapFormat else {
+            NSLog("Neon voice: audio hub unavailable")
+            close(reason: "audio hub")
             return
         }
-        player.play()
+        hub.ensurePlayer()
+        inputConverter = AVAudioConverter(from: tapFormat, to: sendFormat)
+        consumerId = hub.addConsumer { [weak self] buffer in
+            self?.sendMic(buffer)
+        }
     }
 
     private func sendMic(_ buffer: AVAudioPCMBuffer) {
         guard !closed, let converter = inputConverter else { return }
-        // Half-duplex gate: stay quiet while Neon's reply is playing (+ tail).
-        if pendingPlaybacks > 0 || Date() < playbackTailUntil { return }
+        // Half-duplex fallback, only when echo cancellation is unavailable:
+        // stay quiet while Neon's reply is playing (+ tail).
+        if !AudioHub.shared.voiceProcessing,
+           pendingPlaybacks > 0 || Date() < playbackTailUntil { return }
         let ratio = sendFormat.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
         guard let out = AVAudioPCMBuffer(pcmFormat: sendFormat, frameCapacity: capacity) else { return }
@@ -221,6 +217,7 @@ final class VoiceSession: NSObject {
         let amp = min(1, sqrt(sum / Float(frames)) * 6)
         onAmplitude(amp)
         pendingPlaybacks += 1
+        let player = AudioHub.shared.player
         player.scheduleBuffer(buffer) { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }

@@ -16,13 +16,13 @@ func dbg(_ s: String) {
 final class WakeWordListener: NSObject {
     var onWake: () -> Void = {}
 
-    private let engine = AVAudioEngine()
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var rollover: Timer?
     private var restarting = false
     private var active = false
+    private var consumerId: UUID?
 
     func start() {
         active = true
@@ -41,7 +41,8 @@ final class WakeWordListener: NSObject {
         }
     }
 
-    /// Release the microphone (e.g. while a voice session owns it).
+    /// Stop listening (e.g. while a voice session is having a conversation).
+    /// The shared engine keeps running; we just stop consuming from it.
     func stop() {
         active = false
         rollover?.invalidate()
@@ -50,8 +51,8 @@ final class WakeWordListener: NSObject {
         task = nil
         request?.endAudio()
         request = nil
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        AudioHub.shared.removeConsumer(consumerId)
+        consumerId = nil
     }
 
     private func begin() {
@@ -65,35 +66,12 @@ final class WakeWordListener: NSObject {
             NSLog("Neon: on-device recognition unsupported; falling back to server-based")
         }
         self.recognizer = recognizer
-        startEngine()
-        startSession()
-        dbg("listening (on-device: \(recognizer.supportsOnDeviceRecognition), engine running: \(engine.isRunning))")
-    }
-
-    private func startEngine() {
-        guard !engine.isRunning else { return }
-        let input = engine.inputNode
-        input.removeTap(onBus: 0)
-        let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+        AudioHub.shared.startIfNeeded()
+        consumerId = AudioHub.shared.addConsumer { [weak self] buffer in
             self?.request?.append(buffer)
         }
-        engine.prepare()
-        do {
-            try engine.start()
-        } catch {
-            NSLog("Neon: audio engine failed to start: \(error)")
-        }
-        if !engine.isRunning {
-            // CoreAudio can need a beat after another engine releases the mic.
-            dbg("wake engine not running; retrying in 0.5s")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                guard let self, self.active, !self.engine.isRunning else { return }
-                self.engine.prepare()
-                try? self.engine.start()
-                dbg("wake engine retry -> running: \(self.engine.isRunning)")
-            }
-        }
+        startSession()
+        dbg("listening (on-device: \(recognizer.supportsOnDeviceRecognition))")
     }
 
     private func startSession() {
