@@ -236,6 +236,12 @@ Work toward Neon's spoken conversation lives under `voice/`.
   the gemini25 engine sends none), and Google Search grounding is on via a
   `googleSearch` tools entry — verified returning genuinely current
   headlines from both models. Idle timeout is 7 s of post-reply silence.
+- Idle doesn't hang up abruptly: after the 7 s the session enters a doze
+  grace — the eyes run the dozing-off animation while the WebSocket stays
+  open, and mic voice energy during it snaps her back awake with the
+  conversation intact (`onDoze`). The session actually closes only when the
+  doze completes (~5 s). So the contract is: you can keep talking to her
+  until her eyes are fully shut.
 - Thinking is visible in the stream: with `includeThoughts: true`, thought-
   summary parts (`thought: true`) arrive during the pre-reply pause
   (validated by `voice/gemini-thinking-test.mjs` — ~2.5 s of thoughts before
@@ -325,8 +331,10 @@ Work toward Neon's spoken conversation lives under `voice/`.
   cycle. Long-term memory (summarization, Claude Code involvement) is
   future work.
 - Listening look: `neon.hearing(amp)` widens the eyes slightly, lifts the
-  glow with the speaker's voice level, and holds an attentive near-center
-  gaze (saccades stop wandering). Driven by mic RMS from the session
+  glow with the speaker's voice level, holds an attentive near-center gaze
+  (saccades stop wandering), and cocks the eye pair in a head tilt (S.tilt
+  rotates the pair a few degrees, random direction per voice) — the tilt is
+  what makes "hearing" legible at a glance vs plain awake. Driven by mic RMS from the session
   (~10 Hz, echo-cancelled so Neon's own voice doesn't trigger it) and by
   wake-listener partials while idle. The same RMS signal guards the idle
   timer — input transcription arrives in a clump when the model responds,

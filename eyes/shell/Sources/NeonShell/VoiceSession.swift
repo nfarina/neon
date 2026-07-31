@@ -12,6 +12,9 @@ final class VoiceSession: NSObject {
     /// Fires true when the model starts reasoning (thought parts streaming)
     /// and false when its spoken reply begins — drives the eyes' indicator.
     var onThinking: (Bool) -> Void = { _ in }
+    /// Fires true when idle silence begins the doze animation (session still
+    /// open as a grace window) and false if the speaker resumes mid-doze.
+    var onDoze: (Bool) -> Void = { _ in }
     /// Called once when the session ends; reason "tool" means the model put
     /// itself to sleep and the eyes should close immediately.
     var onClosed: (String) -> Void = { _ in }
@@ -48,6 +51,8 @@ final class VoiceSession: NSObject {
     private var closed = false
     private var sleepRequested = false  // model called go_to_sleep; close after audio finishes
     private var sleepTimer: Timer?
+    private var dozing = false
+    private var dozeTimer: Timer?
     private var lastAudioAt = Date.distantPast  // last audio *received* (chunks may trail the tool call)
     private var thinkingActive = false
     // Last time the mic carried voice-level energy. Input transcription
@@ -116,6 +121,7 @@ final class VoiceSession: NSObject {
         NSLog("Neon voice: closing (\(reason)) — \(costLine())")
         idleTimer?.invalidate()
         sleepTimer?.invalidate()
+        dozeTimer?.invalidate()
         if thinkingActive { thinkingActive = false; onThinking(false) }
         camera?.stop()
         camera = nil
@@ -152,6 +158,7 @@ final class VoiceSession: NSObject {
     func statsPairs() -> [[String]] {
         let elapsed = Int(Date().timeIntervalSince(sessionStart))
         let state = thinkingActive ? "thinking"
+            : dozing ? "dozing"
             : pendingPlaybacks > 0 ? "speaking"
             : Date().timeIntervalSince(lastVoiceAt) < 1.0 ? "hearing you"
             : "listening"
@@ -379,6 +386,7 @@ final class VoiceSession: NSObject {
 
     private func bumpIdle() {
         DispatchQueue.main.async {
+            if self.dozing { self.exitDoze() }
             self.idleTimer?.invalidate()
             self.idleTimer = Timer.scheduledTimer(withTimeInterval: Self.idleSeconds, repeats: false) { [weak self] _ in
                 guard let self else { return }
@@ -387,10 +395,39 @@ final class VoiceSession: NSObject {
                 if self.pendingPlaybacks > 0 || Date().timeIntervalSince(self.lastVoiceAt) < 1.5 {
                     self.bumpIdle()
                 } else {
-                    self.close(reason: "idle")
+                    self.enterDoze()
                 }
             }
         }
+    }
+
+    // Idle doesn't hang up immediately: the eyes doze off while the session
+    // stays open, so someone resuming mid-doze is still heard. The session
+    // closes only when the doze animation has fully completed (~5 s).
+    private func enterDoze() {
+        guard !dozing, !closed, !sleepRequested else { return }
+        dozing = true
+        NSLog("Neon voice: dozing (grace window)")
+        onDoze(true)
+        let started = Date()
+        dozeTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self, !self.closed else { return }
+            if Date().timeIntervalSince(self.lastVoiceAt) < 0.4 {
+                self.exitDoze()
+                self.bumpIdle()
+            } else if Date().timeIntervalSince(started) > 5.2 {
+                self.dozeTimer?.invalidate()
+                self.close(reason: "idle")
+            }
+        }
+    }
+
+    private func exitDoze() {
+        guard dozing else { return }
+        dozing = false
+        dozeTimer?.invalidate()
+        NSLog("Neon voice: doze interrupted — still being spoken to")
+        onDoze(false)
     }
 }
 

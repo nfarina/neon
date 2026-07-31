@@ -91,6 +91,7 @@ const S = {
   gy:    ch(0.24),
   lum:   ch(0.35),  // brightness: dim asleep, bright awake
   think: ch(0),     // 0..1 blend of the thinking look
+  tilt:  ch(0),     // head tilt (-1..1) while listening to someone
 };
 
 // scheduled one-shot tasks, driven by the frame clock
@@ -110,6 +111,7 @@ let awakeUntil = 0;
 let hold = false;             // a live voice session keeps the eyes awake
 let speakAmp = 0, speakTarget = 0;  // output-audio level while Neon talks
 let hearAmp = 0, hearTarget = 0;    // room-voice level while someone talks to her
+let tilted = false;                 // head-tilt engaged for the current voice
 let transparent = false;      // ghost mode: eyes float over whatever's behind
 let thinking = false;         // model is reasoning: gaze drifts up, soft shimmer
 let thinkFlip = 1;
@@ -290,6 +292,16 @@ function draw() {
   const driftX = (Math.sin(t * 1.7) + Math.sin(t * 2.9) * 0.5) * 0.008 * awakeness;
   const driftY = (Math.sin(t * 1.3) + Math.sin(t * 2.3) * 0.5) * 0.006 * awakeness;
 
+  // Head tilt: rotate the whole eye pair around screen center (only reads
+  // on reasonably open eyes).
+  ctx.save();
+  const tiltAngle = S.tilt.v * 0.10 * clamp(S.open.v, 0, 1);
+  if (tiltAngle !== 0) {
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(tiltAngle);
+    ctx.translate(-W / 2, -H / 2);
+  }
+
   const openEff = clamp((S.open.v - 0.30 * th) * S.blink.v + breatheOpen, 0.035, 1.18);
   // Thinking: slow left-right scan (reading something invisible) + upward bias
   const gx = S.gx.v + driftX + Math.sin(t * 1.15) * 0.42 * th;
@@ -334,6 +346,7 @@ function draw() {
     ctx.fill();
     ctx.restore();
   }
+  ctx.restore();  // undo head tilt
 }
 
 // ============================================================ main loop
@@ -355,6 +368,14 @@ function frame(ms) {
     if (preview === "speaking") speakTarget = Math.max(speakTarget, 0.3 + (Math.sin(now * 3.7) * 0.5 + 0.5) * 0.55);
   }
   if (thinking && state === "awake") awakeUntil = now + AWAKE_SECS;
+  // Head tilt: engage on a fresh voice, ease back when it stops.
+  if (hearAmp > 0.3 && !tilted) {
+    tilted = true;
+    to(S.tilt, rand(0.7, 1) * (Math.random() < 0.5 ? -1 : 1), 0.45, easeOutCubic);
+  } else if (hearAmp < 0.12 && tilted) {
+    tilted = false;
+    to(S.tilt, 0, 0.6);
+  }
   // Watchdog: a "waking" that never handed off to "awake" (its completion
   // task got cancelled by a state race) would freeze the eyes open forever.
   if (state === "waking" && now - wakeStartedAt > 3) {
@@ -373,6 +394,9 @@ requestAnimationFrame(frame);
 // ============================================================ external API
 window.neon = {
   wake, sleep,
+  // Session idle: begin the doze animation while the session stays open
+  // (grace window); wake() snaps back if the speaker resumes.
+  doze() { if (state === "awake") drowse(); },
   hold(b) { hold = !!b; if (!hold && state === "awake") awakeUntil = now + 2; },
   speaking(a) { speakTarget = Math.min(1, Math.max(0, a)); },
   hearing(a) { hearTarget = Math.max(hearTarget, Math.min(1, Math.max(0, a))); },

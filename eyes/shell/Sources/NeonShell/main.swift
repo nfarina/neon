@@ -183,6 +183,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.webView.evaluateJavaScript("window.neon && neon.hearing(\(amp))")
             }
         }
+        session.onDoze = { [weak self] dozing in
+            self?.webView.evaluateJavaScript("window.neon && neon.\(dozing ? "doze" : "wake")()")
+        }
         session.onClosed = { [weak self] reason in
             guard let self else { return }
             NSLog("Neon: voice session ended (\(reason))")
