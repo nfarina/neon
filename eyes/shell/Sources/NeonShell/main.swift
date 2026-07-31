@@ -63,6 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 17:  // t — ghost mode: transparent background over the desktop
                 self?.toggleTransparency()
                 return nil
+            case 35:  // p — cycle state previews (awake/hearing/thinking/speaking)
+                self?.webView.evaluateJavaScript("window.neon && neon.previewNext()")
+                return nil
             case 48:  // tab (hold) — keyboard shortcut legend
                 if !event.isARepeat { self?.showLegend(true) }
                 return nil

@@ -22,6 +22,14 @@
     border: 1px solid rgba(102, 224, 255, 0.18);
   }
   #legend b { color: #cfeeff; font-weight: 600; display: inline-block; min-width: 40px; }
+  #badge {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    padding: 7px 16px; border-radius: 999px; opacity: 0;
+    font: 13px ui-monospace, SFMono-Regular, monospace;
+    color: #cfeeff; background: rgba(4, 10, 14, 0.82);
+    border: 1px solid rgba(102, 224, 255, 0.22);
+    transition: opacity 0.25s;
+  }
 </style>
 </head>
 <body>
@@ -33,9 +41,11 @@
   <div><b>D</b> debug overlay</div>
   <div><b>E</b> cycle engine</div>
   <div><b>T</b> ghost mode</div>
+  <div><b>P</b> preview states</div>
   <div><b>Tab</b> hold for this legend</div>
   <div><b>Esc</b> quit</div>
 </div>
+<div id="badge"></div>
 <script>
 "use strict";
 
@@ -80,6 +90,7 @@ const S = {
   gx:    ch(0),     // gaze -1..1
   gy:    ch(0.24),
   lum:   ch(0.35),  // brightness: dim asleep, bright awake
+  think: ch(0),     // 0..1 blend of the thinking look
 };
 
 // scheduled one-shot tasks, driven by the frame clock
@@ -153,14 +164,8 @@ function saccadeLoop() {
   });
 }
 
-// Pondering: gaze drifts between the upper corners, lids slightly narrowed.
-function thinkLoop() {
-  if (!thinking) return;
-  if (state !== "awake") { after(0.3, thinkLoop); return; }
-  thinkFlip *= -1;
-  glanceTo(rand(0.22, 0.38) * thinkFlip, rand(-0.45, -0.34));
-  after(rand(0.9, 1.7), thinkLoop);
-}
+// The thinking look itself is continuous (scan + pulse), driven by S.think
+// in draw(); no scheduled glances needed.
 
 function blinkLoop() {
   if (state !== "awake") return;
@@ -215,6 +220,32 @@ function sleep() {
 
 sleepTwitchLoop(); // start life in asleep state
 
+// ============================================================ state preview
+// Cycle through the visual states with synthetic drivers, for eyeballing
+// animations without a live session. P advances; last step returns to sleep.
+let preview = null;   // "hearing" | "speaking" while synthesized in frame()
+const previewStates = ["awake", "hearing", "thinking", "speaking", "off"];
+let previewIx = -1;
+let badgeTimer = null;
+function badge(text) {
+  const el = document.getElementById("badge");
+  el.textContent = text;
+  el.style.opacity = 1;
+  clearTimeout(badgeTimer);
+  badgeTimer = setTimeout(() => { el.style.opacity = 0; }, 1600);
+}
+function previewNext() {
+  previewIx = (previewIx + 1) % previewStates.length;
+  const p = previewStates[previewIx];
+  window.neon.thinking(false);
+  preview = null;
+  if (p === "off") { sleep(); badge("preview: back to sleep"); previewIx = -1; return; }
+  if (state !== "awake" && state !== "waking") wake();
+  if (p === "thinking") window.neon.thinking(true);
+  else if (p !== "awake") preview = p;
+  badge(`preview: ${p}`);
+}
+
 // ============================================================ render
 function draw() {
   const t = now;
@@ -237,9 +268,10 @@ function draw() {
   const eyeW = B * 0.20, eyeH = B * 0.26;
   const sep = B * 0.34;              // distance between eye centers
   const gazePx = B * 0.045;
-  const shimmer = thinking ? (Math.sin(t * 2.6) * 0.5 + 0.5) * 0.18 : 0;
+  const th = S.think.v;  // thinking look: scan, lift, pulse, narrow
+  const pulse = (Math.sin(t * 3.0) * 0.5 + 0.5) * 0.34 * th;
   const awakeGate = clamp(S.open.v, 0, 1);  // hearing cues only read on open eyes
-  const lum = clamp(S.lum.v + speakAmp * 0.3 + shimmer + hearAmp * 0.14 * awakeGate, 0, 1.1);
+  const lum = clamp(S.lum.v + speakAmp * 0.3 + pulse + hearAmp * 0.14 * awakeGate, 0, 1.1);
 
   // breathing & idle bob
   const asleepish = 1 - clamp(S.open.v, 0, 1);
@@ -252,8 +284,10 @@ function draw() {
   const driftX = (Math.sin(t * 1.7) + Math.sin(t * 2.9) * 0.5) * 0.008 * awakeness;
   const driftY = (Math.sin(t * 1.3) + Math.sin(t * 2.3) * 0.5) * 0.006 * awakeness;
 
-  const openEff = clamp(S.open.v * S.blink.v + breatheOpen, 0.035, 1.18);
-  const gx = S.gx.v + driftX, gy = S.gy.v + driftY;
+  const openEff = clamp((S.open.v - 0.30 * th) * S.blink.v + breatheOpen, 0.035, 1.18);
+  // Thinking: slow left-right scan (reading something invisible) + upward bias
+  const gx = S.gx.v + driftX + Math.sin(t * 1.15) * 0.42 * th;
+  const gy = S.gy.v + driftY - 0.5 * th;
 
   for (const dir of [-1, 1]) {
     const cx = W / 2 + dir * sep / 2 + gx * gazePx;
@@ -267,7 +301,7 @@ function draw() {
     const x = cx - w / 2;
     const r = Math.min(w * 0.42, h / 2);
 
-    const hue = 191;
+    const hue = 191 + 28 * th;  // drift toward indigo while reasoning
     const topL = 40 + 32 * lum;
     const botL = 30 + 24 * lum;
     const grad = ctx.createLinearGradient(0, y, 0, y + h);
@@ -277,7 +311,7 @@ function draw() {
     // wide soft bloom pass
     ctx.save();
     ctx.shadowColor = `hsla(${hue}, 100%, 60%, ${0.35 + 0.3 * lum})`;
-    ctx.shadowBlur = B * 0.10 * (0.4 + 0.6 * lum) * (1 + speakAmp * 0.6);
+    ctx.shadowBlur = B * 0.10 * (0.4 + 0.6 * lum) * (1 + speakAmp * 0.6 + pulse * 1.4);
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.roundRect(x, y, w, h, r);
@@ -305,6 +339,9 @@ function frame(ms) {
   speakTarget *= 0.92;  // decay between amplitude updates
   hearAmp += (hearTarget - hearAmp) * 0.18;
   hearTarget *= 0.94;   // decays to stillness shortly after the voice stops
+  if (preview === "hearing") hearTarget = Math.max(hearTarget, 0.5 + Math.sin(t * 2.1) * 0.15);
+  if (preview === "speaking") speakTarget = Math.max(speakTarget, 0.3 + (Math.sin(t * 3.7) * 0.5 + 0.5) * 0.55);
+  if ((preview || thinking) && state === "awake") awakeUntil = now + AWAKE_SECS;
   if (hold && state === "awake") awakeUntil = now + AWAKE_SECS;
   // Being actively spoken to is a reason to stay awake (pre-wake capture
   // of a long question must not drowse mid-sentence).
@@ -332,13 +369,8 @@ window.neon = {
     on = !!on;
     if (on === thinking) return;
     thinking = on;
-    if (on) {
-      to(S.open, 0.82, 0.45);   // pensive squint
-      thinkLoop();
-    } else {
-      to(S.open, 1, 0.3, easeOutCubic);
-      glanceTo(0, 0);           // come back to the room
-    }
+    to(S.think, on ? 1 : 0, on ? 0.5 : 0.35);
+    if (!on) glanceTo(0, 0);    // come back to the room
   },
   stats(pairs) {
     document.getElementById("debug").innerHTML = pairs
@@ -347,9 +379,11 @@ window.neon = {
   },
   get state() { return state; },
 };
+window.neon.previewNext = previewNext;
 addEventListener("keydown", e => {
   if (e.key === " " || e.key === "w") wake();
   if (e.key === "s") sleep();
+  if (e.key === "p") previewNext();
 });
 </script>
 </body>

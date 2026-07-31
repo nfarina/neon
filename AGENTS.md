@@ -241,8 +241,11 @@ Work toward Neon's spoken conversation lives under `voice/`.
   (validated by `voice/gemini-thinking-test.mjs` — ~2.5 s of thoughts before
   first audio on a search question). VoiceSession turns the first thought
   part into `onThinking(true)` and the first audio chunk into
-  `onThinking(false)`; the eyes respond with a pensive squint, gaze drifting
-  between the upper corners, and a soft luminance shimmer (`neon.thinking`).
+  `onThinking(false)`; the eyes respond with the thinking look
+  (`neon.thinking`, blended via an S.think channel): hue drifts from cyan to
+  indigo, lids narrow, gaze lifts and slowly scans left-right, and the glow
+  pulses — deliberately unmistakable (the first, subtler version read as
+  "eyes go a bit more square"). Verified by screenshot via Chrome.
 - Tool-sleep closes must wait for *received-audio quiet*, not just an empty
   playback queue: goodbye audio chunks trail the tool call, and the queue can
   momentarily drain mid-stream (this clipped goodbyes in the kitchen). The
@@ -336,7 +339,9 @@ Work toward Neon's spoken conversation lives under `voice/`.
   the eyes simply close again, so the pre-wake state always resolves.
 - Keys: Esc quit · W wake · S end session · D debug overlay · E cycle
   engine · T ghost mode (transparent window/canvas so the eyes float over
-  the desktop — for watching Claude Code work underneath) · Tab (hold)
+  the desktop — for watching Claude Code work underneath) · P cycle state
+  previews (awake → hearing → thinking → speaking → sleep, with synthetic
+  drivers and an on-screen badge — works in plain Chrome too) · Tab (hold)
   shortcut legend.
 - Next: more tools (Nick has ideas queued); Claude Code handoff for long
   tasks; wake-phrase accuracy (watch the overlay's "mac hears" line;
