@@ -250,10 +250,20 @@ Work toward Neon's spoken conversation lives under `voice/`.
   into the "saying:" log line. Both cosmetic at current prices.
 - Gemini live-preview tool-calling quirk (observed in the kitchen): the model
   sometimes *speaks* the call — literally saying "go to sleep" with
-  `do_call:go_to_sleep{}` in the output transcription — instead of emitting a
-  real `toolCall`. VoiceSession treats that transcript leak as the call
-  (fallback in the `.outputText` handler), and the system prompt forbids
-  speaking tool names aloud.
+  `do_call:go_to_sleep{}` in the output transcription — instead of (or as
+  well as) emitting a real `toolCall`. VoiceSession treats that transcript
+  leak as the call (fallback in the `.outputText` handler), and the system
+  prompt forbids speaking tool names aloud. This is a known weakness of the
+  *native-audio* live architecture (calls are emitted as tokens interleaved
+  in the speech stream); half-cascade models are the documented remedy but
+  none are available on this key. As an A/B, engine "gemini25"
+  (`gemini-2.5-flash-native-audio-latest`, the GA native-audio model) is in
+  the E-key cycle — gemini → gemini25 → openai — with same audio rates
+  ($3/$12) and cheaper text ($0.50/$2.00). First solo test: clean toolCall,
+  no verbalization.
+- Camera note: both Gemini engines accept 1 FPS video frames via
+  `realtimeInput.video`, so the camera work is not gated on the 3.1-vs-2.5
+  choice.
 - Wake redesign (after kitchen testing showed "hey neon" only matched when
   spoken with a deliberate pause): the trigger is now the *name at the start
   of an utterance* — silence, then "neon" (hey optional), optionally followed

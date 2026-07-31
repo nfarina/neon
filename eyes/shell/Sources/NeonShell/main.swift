@@ -95,7 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func cycleEngine() {
-        providerName = providerName == "gemini" ? "openai" : "gemini"
+        let idx = engineNames.firstIndex(of: providerName) ?? 0
+        providerName = engineNames[(idx + 1) % engineNames.count]
         UserDefaults.standard.set(providerName, forKey: "neon.voiceProvider")
         NSLog("Neon: voice engine -> \(providerName) (next session)")
         pushStats()

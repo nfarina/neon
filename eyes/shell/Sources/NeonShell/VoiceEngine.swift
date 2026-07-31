@@ -52,8 +52,11 @@ protocol VoiceEngine {
 // MARK: - Gemini Live
 
 struct GeminiEngine: VoiceEngine {
-    let name = "gemini"
-    let model = "gemini-3.1-flash-live-preview"
+    var name = "gemini"
+    var model = "gemini-3.1-flash-live-preview"
+    // Pricing per 1M tokens; both native-audio models share audio rates.
+    var textInRate = 0.75, textOutRate = 4.50
+    let audioInRate = 3.00, audioOutRate = 12.00
     let sendSampleRate = 16000.0
     let keyName = "GEMINI_API_KEY"
 
@@ -137,9 +140,8 @@ struct GeminiEngine: VoiceEngine {
     }
 
     func cost(_ u: VoiceUsage, elapsed: TimeInterval) -> Double {
-        // gemini-3.1-flash-live-preview: audio $3/$12, text $0.75/$4.50 per 1M
-        (Double(u.audioIn) * 3.00 + Double(u.audioOut) * 12.00
-            + Double(u.textIn) * 0.75 + Double(u.textOut) * 4.50) / 1_000_000
+        (Double(u.audioIn) * audioInRate + Double(u.audioOut) * audioOutRate
+            + Double(u.textIn) * textInRate + Double(u.textOut) * textOutRate) / 1_000_000
     }
 }
 
@@ -255,9 +257,17 @@ struct OpenAIEngine: VoiceEngine {
     }
 }
 
+/// Engine names in E-key cycle order.
+let engineNames = ["gemini", "gemini25", "openai"]
+
 func makeEngine(_ name: String) -> VoiceEngine {
     switch name {
     case "openai": return OpenAIEngine()
+    case "gemini25":
+        // GA native-audio model — same audio rates as 3.1, cheaper text.
+        // A/B candidate for less tool-call verbalization than the preview.
+        return GeminiEngine(name: "gemini25", model: "gemini-2.5-flash-native-audio-latest",
+                            textInRate: 0.50, textOutRate: 2.00)
     default: return GeminiEngine()
     }
 }
