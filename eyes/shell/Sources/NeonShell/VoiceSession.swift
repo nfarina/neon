@@ -151,8 +151,13 @@ final class VoiceSession: NSObject {
 
     func statsPairs() -> [[String]] {
         let elapsed = Int(Date().timeIntervalSince(sessionStart))
+        let state = thinkingActive ? "thinking"
+            : pendingPlaybacks > 0 ? "speaking"
+            : Date().timeIntervalSince(lastVoiceAt) < 1.0 ? "hearing you"
+            : "listening"
         return [
             ["engine", "\(engine.name) · \(engine.model)"],
+            ["state", state],
             ["session", String(format: "%d:%02d", elapsed / 60, elapsed % 60)],
             ["audio in/out", "\(usage.audioIn)/\(usage.audioOut) tok"],
             ["text in/out", "\(usage.textIn)/\(usage.textOut) tok"],

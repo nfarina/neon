@@ -147,6 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             pairs = [
                 ["engine", "\(providerName) (idle)"],
+                ["state", "wake listener"],
                 ["lifetime", String(format: "$%.3f", UsageStore.shared.total)],
                 ["mac hears", String(wakeHeard.suffix(70))],
             ]

@@ -35,6 +35,7 @@ final class Sim {
     var baseline: [String] = []
     var latestWords: [String] = []
     var pending = false
+    var pendingNameEnd: Int?
     var fired: String?
 
     func partial(_ text: String, at now: Double) {
@@ -43,7 +44,10 @@ final class Sim {
         lastPartialAt = now
         latestWords = words
         guard !pending else { return }
-        if nameEnd(in: words, from: commonPrefix(baseline, words)) != nil { pending = true }
+        if let end = nameEnd(in: words, from: commonPrefix(baseline, words)) {
+            pending = true
+            pendingNameEnd = end
+        }
     }
 
     func tick(at now: Double) {
@@ -54,7 +58,14 @@ final class Sim {
     func evaluate() {
         pending = false
         let cut = commonPrefix(baseline, latestWords)
-        if let end = nameEnd(in: latestWords, from: cut) {
+        var matched = nameEnd(in: latestWords, from: cut)
+        if matched == nil, let seen = pendingNameEnd {
+            for i in max(0, seen - 5)..<min(latestWords.count, seen + 3) {
+                if let e = nameEnd(in: latestWords, from: i) { matched = e; break }
+            }
+        }
+        pendingNameEnd = nil
+        if let end = matched {
             let cmd = latestWords.dropFirst(end).joined(separator: " ")
             fired = cmd.isEmpty ? "(greeting)" : cmd
         } else {
@@ -102,3 +113,9 @@ run("late revision", [(1.0, "Neon set a"), (1.3, "Neon set a timer"), (1.6, "Neo
     expect: "set a timer for ten minutes")
 // apostrophes survive tokenizing
 run("apostrophe", [(1.0, "Neon what's the weather")], expect: "what's the weather")
+// LONG QUESTION: recognizer revises words BEFORE the name mid-capture,
+// shifting the common-prefix boundary — the stored name position recovers it
+run("baseline revised during long question",
+    [(1.0, "lets see"), (3.0, "lets see neon what is"), (3.4, "lets see neon what is the largest"),
+     (3.8, "let us see neon what is the largest planet")],
+    expect: "what is the largest planet")

@@ -57,6 +57,7 @@ final class WakeWordListener: NSObject {
     private var latestWords: [String] = []
     private var pendingPoll: Timer?
     private var pendingDeadline = Date.distantFuture
+    private var pendingNameEnd: Int?  // index past the name when first spotted
 
     func start() {
         active = true
@@ -117,6 +118,7 @@ final class WakeWordListener: NSObject {
         lastPartialAt = .distantPast
         baseline = []
         latestWords = []
+        pendingNameEnd = nil
         pendingPoll?.invalidate()
         pendingPoll = nil
         let req = SFSpeechAudioBufferRecognitionRequest()
@@ -184,7 +186,7 @@ final class WakeWordListener: NSObject {
 
     private static let utteranceGap: TimeInterval = 0.7   // silence that starts a new utterance
     private static let trailingSilence: TimeInterval = 0.85  // quiet after the name/command = go
-    private static let maxCommandWait: TimeInterval = 6   // fire with what we have by then
+    private static let maxCommandWait: TimeInterval = 12  // fire with what we have by then
 
     /// If an utterance starting at `start` opens with the name, return the
     /// index just past it (where a command would begin).
@@ -223,9 +225,10 @@ final class WakeWordListener: NSObject {
         latestWords = words
 
         guard pendingPoll == nil else { return }  // already waiting for the utterance to finish
-        if Self.nameEnd(in: words, from: Self.commonPrefix(baseline, words)) != nil {
+        if let end = Self.nameEnd(in: words, from: Self.commonPrefix(baseline, words)) {
             dbg("name candidate; waiting for end of utterance")
             preWakeSignaled = true
+            pendingNameEnd = end
             onNameHeard()
             pendingDeadline = now.addingTimeInterval(Self.maxCommandWait)
             pendingPoll = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
@@ -248,9 +251,21 @@ final class WakeWordListener: NSObject {
         pendingPoll = nil
         guard active, !restarting else { return false }
         let cut = Self.commonPrefix(baseline, latestWords)
-        guard let end = Self.nameEnd(in: latestWords, from: cut) else {
+        var matched = Self.nameEnd(in: latestWords, from: cut)
+        if matched == nil, let seen = pendingNameEnd {
+            // Long utterances give the recognizer time to revise words
+            // *before* the name, which shifts the common-prefix boundary and
+            // breaks the strict match. The name was validated at detection —
+            // re-find it near where it first appeared.
+            for i in max(0, seen - 5)..<min(latestWords.count, seen + 3) {
+                if let e = Self.nameEnd(in: latestWords, from: i) { matched = e; break }
+            }
+        }
+        pendingNameEnd = nil
+        guard let end = matched else {
             baseline = latestWords  // utterance consumed; don't rematch it later
             if preWakeSignaled { preWakeSignaled = false; onWakeAborted() }
+            dbg("name candidate lost after revision; standing down")
             return false
         }
         let command = latestWords.dropFirst(end).joined(separator: " ")

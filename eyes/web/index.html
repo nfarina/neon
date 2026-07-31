@@ -306,6 +306,9 @@ function frame(ms) {
   hearAmp += (hearTarget - hearAmp) * 0.18;
   hearTarget *= 0.94;   // decays to stillness shortly after the voice stops
   if (hold && state === "awake") awakeUntil = now + AWAKE_SECS;
+  // Being actively spoken to is a reason to stay awake (pre-wake capture
+  // of a long question must not drowse mid-sentence).
+  if (hearAmp > 0.25 && state === "awake") awakeUntil = now + AWAKE_SECS;
   if (state === "awake" && now > awakeUntil) drowse();
   draw();
   requestAnimationFrame(frame);
