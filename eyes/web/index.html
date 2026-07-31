@@ -336,8 +336,11 @@ function draw() {
   }
 
   // Listening indicator: a cyan glow border inset around the screen edge,
-  // its spread and brightness following the speaker's voice level.
-  const hearGate = hearAmp * clamp(S.open.v, 0, 1);
+  // its spread and brightness following the speaker's voice level. Only
+  // while a session is live (hold) — it means "Neon is hearing this",
+  // not merely "the wake listener noticed sound".
+  const hearGate = hearAmp * clamp(S.open.v, 0, 1)
+    * (hold || preview === "hearing" ? 1 : 0);
   if (hearGate > 0.02) {
     ctx.save();
     ctx.lineWidth = B * 0.006;
