@@ -22,6 +22,7 @@ enum VoiceEvent {
     case interrupted
     case usage(VoiceUsage, cumulative: Bool)  // cumulative: replaces prior totals
     case toolCall(String)                     // function name
+    case thinking                             // a thought part arrived; model is reasoning
 }
 
 // Tools offered to every engine. go_to_sleep lets the model end the session
@@ -82,7 +83,10 @@ struct GeminiEngine: VoiceEngine {
             "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": voice]]],
         ]
         if let thinkingLevel {
-            generationConfig["thinkingConfig"] = ["thinkingLevel": thinkingLevel]
+            // includeThoughts streams thought-summary parts, which drive the
+            // eyes' "thinking" indicator (validated by gemini-thinking-test.mjs).
+            generationConfig["thinkingConfig"] =
+                ["thinkingLevel": thinkingLevel, "includeThoughts": true]
         }
         return [[
             "setup": [
@@ -146,9 +150,11 @@ struct GeminiEngine: VoiceEngine {
             if let turn = sc["modelTurn"] as? [String: Any],
                let parts = turn["parts"] as? [[String: Any]] {
                 for part in parts {
-                    if let inline = part["inlineData"] as? [String: Any],
-                       let b64 = inline["data"] as? String,
-                       let data = Data(base64Encoded: b64) {
+                    if part["thought"] as? Bool == true {
+                        events.append(.thinking)
+                    } else if let inline = part["inlineData"] as? [String: Any],
+                              let b64 = inline["data"] as? String,
+                              let data = Data(base64Encoded: b64) {
                         events.append(.audio(data))
                     }
                 }

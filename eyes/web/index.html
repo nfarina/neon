@@ -99,6 +99,8 @@ let awakeUntil = 0;
 let hold = false;             // a live voice session keeps the eyes awake
 let speakAmp = 0, speakTarget = 0;  // output-audio level while Neon talks
 let transparent = false;      // ghost mode: eyes float over whatever's behind
+let thinking = false;         // model is reasoning: gaze drifts up, soft shimmer
+let thinkFlip = 1;
 
 function blinkOnce(cb) {
   to(S.blink, 0, 0.07, easeInCubic);
@@ -137,9 +139,18 @@ function saccadeLoop() {
   if (state !== "awake") return;
   after(rand(0.6, 2.4), () => {
     if (state !== "awake") return;
-    glanceTo(rand(-0.45, 0.45), rand(-0.22, 0.28));
+    if (!thinking) glanceTo(rand(-0.45, 0.45), rand(-0.22, 0.28));
     saccadeLoop();
   });
+}
+
+// Pondering: gaze drifts between the upper corners, lids slightly narrowed.
+function thinkLoop() {
+  if (!thinking) return;
+  if (state !== "awake") { after(0.3, thinkLoop); return; }
+  thinkFlip *= -1;
+  glanceTo(rand(0.22, 0.38) * thinkFlip, rand(-0.45, -0.34));
+  after(rand(0.9, 1.7), thinkLoop);
 }
 
 function blinkLoop() {
@@ -217,7 +228,8 @@ function draw() {
   const eyeW = B * 0.20, eyeH = B * 0.26;
   const sep = B * 0.34;              // distance between eye centers
   const gazePx = B * 0.045;
-  const lum = clamp(S.lum.v + speakAmp * 0.3, 0, 1.1);
+  const shimmer = thinking ? (Math.sin(t * 2.6) * 0.5 + 0.5) * 0.18 : 0;
+  const lum = clamp(S.lum.v + speakAmp * 0.3 + shimmer, 0, 1.1);
 
   // breathing & idle bob
   const asleepish = 1 - clamp(S.open.v, 0, 1);
@@ -300,6 +312,18 @@ window.neon = {
     document.body.style.background = on ? "transparent" : "";
   },
   legend(show) { document.getElementById("legend").style.display = show ? "block" : "none"; },
+  thinking(on) {
+    on = !!on;
+    if (on === thinking) return;
+    thinking = on;
+    if (on) {
+      to(S.open, 0.82, 0.45);   // pensive squint
+      thinkLoop();
+    } else {
+      to(S.open, 1, 0.3, easeOutCubic);
+      glanceTo(0, 0);           // come back to the room
+    }
+  },
   stats(pairs) {
     document.getElementById("debug").innerHTML = pairs
       .map(([k, v]) => `<span>${k}<b>${v}</b></span>`)

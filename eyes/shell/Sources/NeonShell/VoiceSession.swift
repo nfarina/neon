@@ -6,6 +6,9 @@ import Foundation
 // AudioHub, plays replies through it, and meters token usage into costs.
 final class VoiceSession: NSObject {
     var onAmplitude: (Float) -> Void = { _ in }
+    /// Fires true when the model starts reasoning (thought parts streaming)
+    /// and false when its spoken reply begins — drives the eyes' indicator.
+    var onThinking: (Bool) -> Void = { _ in }
     /// Called once when the session ends; reason "tool" means the model put
     /// itself to sleep and the eyes should close immediately.
     var onClosed: (String) -> Void = { _ in }
@@ -40,7 +43,10 @@ final class VoiceSession: NSObject {
     private let playFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
     private var idleTimer: Timer?
     private var closed = false
-    private var sleepRequested = false  // model called go_to_sleep; close after playback drains
+    private var sleepRequested = false  // model called go_to_sleep; close after audio finishes
+    private var sleepTimer: Timer?
+    private var lastAudioAt = Date.distantPast  // last audio *received* (chunks may trail the tool call)
+    private var thinkingActive = false
     private let sessionStart = Date()
     private var usage = VoiceUsage()
     private var heard = ""  // running input transcript, for the debug overlay
@@ -100,6 +106,8 @@ final class VoiceSession: NSObject {
         closed = true
         NSLog("Neon voice: closing (\(reason)) — \(costLine())")
         idleTimer?.invalidate()
+        sleepTimer?.invalidate()
+        if thinkingActive { thinkingActive = false; onThinking(false) }
         camera?.stop()
         camera = nil
         ConversationLog.shared.append(turns: transcript)
@@ -187,7 +195,16 @@ final class VoiceSession: NSObject {
                 if let cmd = firstUtterance { record("Nick", cmd) }
                 for m in engine.readyMessages(greeting: opening) { sendJSON(m) }
             case .audio(let data):
+                lastAudioAt = Date()
+                if thinkingActive { thinkingActive = false; onThinking(false) }
                 enqueuePlayback(data)
+                bumpIdle()
+            case .thinking:
+                if !thinkingActive {
+                    NSLog("Neon voice: thinking…")
+                    thinkingActive = true
+                    onThinking(true)
+                }
                 bumpIdle()
             case .inputText(let t):
                 NSLog("Neon voice: heard: \(t)")
@@ -201,18 +218,13 @@ final class VoiceSession: NSObject {
                 // of emitting a real toolCall. Treat the leak as the call.
                 if t.contains(sleepToolName) || t.contains("do_call") {
                     NSLog("Neon voice: tool-call leak in speech; treating as \(sleepToolName)")
-                    sleepRequested = true
-                    if pendingPlaybacks <= 0 { close(reason: "tool") }
+                    requestSleep()
                 } else {
                     record("Neon", t)
                 }
             case .toolCall(let name):
                 NSLog("Neon voice: tool call: \(name)")
-                if name == sleepToolName {
-                    sleepRequested = true
-                    if pendingPlaybacks <= 0 { close(reason: "tool") }
-                    // else: closed by the playback drain handler
-                }
+                if name == sleepToolName { requestSleep() }
             case .interrupted:
                 AudioHub.shared.player.stop()
                 pendingPlaybacks = 0
@@ -220,6 +232,23 @@ final class VoiceSession: NSObject {
                 AudioHub.shared.player.play()
             case .usage(let u, let cumulative):
                 if cumulative { usage = u } else { usage.add(u) }
+            }
+        }
+    }
+
+    /// The model asked to sleep, but audio chunks for its goodbye may still
+    /// be arriving — the playback queue can momentarily drain mid-stream, so
+    /// "queue empty" alone clips the goodbye. Close only once the queue is
+    /// empty AND no new audio has arrived for a beat.
+    private func requestSleep() {
+        guard !sleepRequested else { return }
+        sleepRequested = true
+        let deadline = Date().addingTimeInterval(12)
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self, !self.closed else { return }
+            let audioQuiet = Date().timeIntervalSince(self.lastAudioAt) > 0.7
+            if (self.pendingPlaybacks <= 0 && audioQuiet) || Date() > deadline {
+                self.close(reason: "tool")
             }
         }
     }
@@ -310,7 +339,6 @@ final class VoiceSession: NSObject {
                 self.pendingPlaybacks -= 1
                 if self.pendingPlaybacks <= 0 {
                     self.playbackTailUntil = Date().addingTimeInterval(0.3)
-                    if self.sleepRequested { self.close(reason: "tool"); return }
                     // The reply has finished *playing*; idle silence starts now.
                     // (Audio arrives from the API much faster than realtime, so
                     // the receive-side bumps alone would start the idle clock

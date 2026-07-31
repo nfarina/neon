@@ -236,6 +236,19 @@ Work toward Neon's spoken conversation lives under `voice/`.
   the gemini25 engine sends none), and Google Search grounding is on via a
   `googleSearch` tools entry — verified returning genuinely current
   headlines from both models. Idle timeout is 7 s of post-reply silence.
+- Thinking is visible in the stream: with `includeThoughts: true`, thought-
+  summary parts (`thought: true`) arrive during the pre-reply pause
+  (validated by `voice/gemini-thinking-test.mjs` — ~2.5 s of thoughts before
+  first audio on a search question). VoiceSession turns the first thought
+  part into `onThinking(true)` and the first audio chunk into
+  `onThinking(false)`; the eyes respond with a pensive squint, gaze drifting
+  between the upper corners, and a soft luminance shimmer (`neon.thinking`).
+- Tool-sleep closes must wait for *received-audio quiet*, not just an empty
+  playback queue: goodbye audio chunks trail the tool call, and the queue can
+  momentarily drain mid-stream (this clipped goodbyes in the kitchen). The
+  session closes when the queue is empty AND no audio has arrived for 0.7 s
+  (12 s cap). Leak formats observed so far: `do_call:go_to_sleep{}` and
+  `<go_to_sleep>` — the fallback matches on the tool-name substring.
 - Tool calling works (validated by `voice/gemini-tool-test.mjs`; wire shape
   `toolCall.functionCalls[{name, args, id}]`). First tool: `go_to_sleep` —
   declared to both engines; the model calls it when the user says goodbye or

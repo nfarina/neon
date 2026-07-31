@@ -155,6 +155,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         session.onAmplitude = { [weak self] amp in
             self?.webView.evaluateJavaScript("window.neon && neon.speaking(\(amp))")
         }
+        session.onThinking = { [weak self] on in
+            self?.webView.evaluateJavaScript("window.neon && neon.thinking(\(on))")
+        }
         session.onClosed = { [weak self] reason in
             guard let self else { return }
             NSLog("Neon: voice session ended (\(reason))")
