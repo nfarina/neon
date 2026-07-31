@@ -187,8 +187,33 @@ Work toward Neon's spoken conversation lives under `voice/`.
   during the session (`neon.hold`) and pulse with output amplitude
   (`neon.speaking`). On setup the session sends a synthetic turn so Neon
   greets immediately after the wake phrase.
+- The full loop worked end to end on July 31, 2026: wake phrase → eyes wake →
+  Gemini session → spoken multi-turn conversation → idle → sleep.
+- The app is signed with the self-signed "Neon Dev" certificate (login
+  keychain; generated files in `~/.config/neon/codesign*`). This matters:
+  ad-hoc signing gives each build a new identity, so macOS silently resets
+  the Microphone TCC grant on every rebuild and the wake listener hangs
+  forever awaiting an invisible permission callback. `build.sh` uses the
+  certificate and falls back to ad-hoc with a warning.
+- Wake-word findings from live testing: Apple's recognizer sometimes fuses
+  the phrase into one token — observed "Hey Neon" → "Henon" — so the matcher
+  accepts merged forms too. `dbg()` breadcrumbs (raw stderr) log every
+  partial transcript; NSLog alone proved unreliable to observe. Debug
+  workflow: run `eyes/Neon.app/Contents/MacOS/Neon 2> /tmp/log` directly —
+  Terminal holds a mic grant, so permissions work from a shell launch.
+- Voice-processing echo cancellation (`setVoiceProcessingEnabled`) fails on
+  this machine with CoreAudio error -10875, so VoiceSession uses a
+  half-duplex gate instead: mic upload is suppressed while replies play
+  (plus a 0.3 s tail). Consequence: no voice barge-in for now. Revisit AEC
+  if talking over Neon matters.
+- After a voice session releases the mic, the wake listener's engine can
+  need a retry to restart; it retries once after 0.5 s.
+- Privacy note: the wake listener's continuous transcription is on-device
+  only; audio reaches Google only during an open session after the wake
+  phrase.
 - Next: camera frames into the live session; tool calling for personal Mac
-  tools; Claude Code handoff for long tasks.
+  tools; Claude Code handoff for long tasks; revisit AEC/barge-in; tune the
+  15 s idle timeout with kitchen experience.
 
 ## Eyes Proof of Concept
 

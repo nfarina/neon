@@ -28,6 +28,11 @@ final class VoiceSession: NSObject {
     private let playFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
     private var idleTimer: Timer?
     private var closed = false
+    // Half-duplex: suppress mic upload while Neon is speaking so it does not
+    // hear itself (voice-processing AEC fails to init on this machine with
+    // error -10875; revisit for true barge-in support).
+    private var pendingPlaybacks = 0
+    private var playbackTailUntil = Date.distantPast
 
     // MARK: - Lifecycle
 
@@ -125,8 +130,10 @@ final class VoiceSession: NSObject {
         }
         guard let sc = msg["serverContent"] as? [String: Any] else { return }
         if sc["interrupted"] != nil {
-            // Barge-in: drop everything queued and keep listening.
+            // Server-side barge-in: drop everything queued and keep listening.
             player.stop()
+            pendingPlaybacks = 0
+            playbackTailUntil = Date.distantPast
             player.play()
         }
         if let turn = sc["modelTurn"] as? [String: Any],
@@ -153,11 +160,6 @@ final class VoiceSession: NSObject {
 
     private func startAudio() {
         let input = engine.inputNode
-        do {
-            try input.setVoiceProcessingEnabled(true)  // hardware echo cancellation
-        } catch {
-            NSLog("Neon voice: voice processing unavailable (\(error.localizedDescription)); echo possible")
-        }
         let tapFormat = input.outputFormat(forBus: 0)
         inputConverter = AVAudioConverter(from: tapFormat, to: sendFormat)
         engine.attach(player)
@@ -178,6 +180,8 @@ final class VoiceSession: NSObject {
 
     private func sendMic(_ buffer: AVAudioPCMBuffer) {
         guard !closed, let converter = inputConverter else { return }
+        // Half-duplex gate: stay quiet while Neon's reply is playing (+ tail).
+        if pendingPlaybacks > 0 || Date() < playbackTailUntil { return }
         let ratio = sendFormat.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
         guard let out = AVAudioPCMBuffer(pcmFormat: sendFormat, frameCapacity: capacity) else { return }
@@ -216,7 +220,16 @@ final class VoiceSession: NSObject {
         }
         let amp = min(1, sqrt(sum / Float(frames)) * 6)
         onAmplitude(amp)
-        player.scheduleBuffer(buffer)
+        pendingPlaybacks += 1
+        player.scheduleBuffer(buffer) { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.pendingPlaybacks -= 1
+                if self.pendingPlaybacks <= 0 {
+                    self.playbackTailUntil = Date().addingTimeInterval(0.3)
+                }
+            }
+        }
         if !player.isPlaying { player.play() }
     }
 

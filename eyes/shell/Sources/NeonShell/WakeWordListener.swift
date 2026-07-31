@@ -1,6 +1,11 @@
 import AVFoundation
 import Speech
 
+// Raw stderr breadcrumbs — NSLog output was not reliably observable.
+func dbg(_ s: String) {
+    FileHandle.standardError.write(Data("NEON \(s)\n".utf8))
+}
+
 // Wake-word detection via continuous on-device speech recognition.
 //
 // This is deliberately the simplest thing that works: transcribe the room
@@ -21,16 +26,16 @@ final class WakeWordListener: NSObject {
 
     func start() {
         active = true
+        dbg("start(): speech=\(SFSpeechRecognizer.authorizationStatus().rawValue) mic=\(AVCaptureDevice.authorizationStatus(for: .audio).rawValue) (3=authorized, 0=notDetermined)")
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
+            dbg("speech auth callback: \(status.rawValue)")
             guard status == .authorized else {
-                NSLog("Neon: speech recognition not authorized (status \(status.rawValue))")
+                NSLog("Neon wake: speech recognition not authorized")
                 return
             }
             AVCaptureDevice.requestAccess(for: .audio) { granted in
-                guard granted else {
-                    NSLog("Neon: microphone access denied")
-                    return
-                }
+                dbg("mic auth callback: \(granted)")
+                guard granted else { return }
                 DispatchQueue.main.async { self?.begin() }
             }
         }
@@ -62,6 +67,7 @@ final class WakeWordListener: NSObject {
         self.recognizer = recognizer
         startEngine()
         startSession()
+        dbg("listening (on-device: \(recognizer.supportsOnDeviceRecognition), engine running: \(engine.isRunning))")
     }
 
     private func startEngine() {
@@ -77,6 +83,16 @@ final class WakeWordListener: NSObject {
             try engine.start()
         } catch {
             NSLog("Neon: audio engine failed to start: \(error)")
+        }
+        if !engine.isRunning {
+            // CoreAudio can need a beat after another engine releases the mic.
+            dbg("wake engine not running; retrying in 0.5s")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, self.active, !self.engine.isRunning else { return }
+                self.engine.prepare()
+                try? self.engine.start()
+                dbg("wake engine retry -> running: \(self.engine.isRunning)")
+            }
         }
     }
 
@@ -94,6 +110,7 @@ final class WakeWordListener: NSObject {
                 guard let self else { return }
                 if let result {
                     let text = result.bestTranscription.formattedString
+                    dbg("transcript: \(text)")
                     if Self.containsWakePhrase(text) {
                         NSLog("Neon: wake phrase heard in \"\(text)\"")
                         self.onWake()
@@ -105,8 +122,9 @@ final class WakeWordListener: NSObject {
                         return
                     }
                 }
-                if error != nil {
+                if let error = error as NSError? {
                     // Includes the routine "no speech detected" timeout — just begin again.
+                    NSLog("Neon wake: task error \(error.domain) \(error.code): \(error.localizedDescription)")
                     self.restart(after: 0.6)
                 }
             }
@@ -136,8 +154,10 @@ final class WakeWordListener: NSObject {
     static func containsWakePhrase(_ text: String) -> Bool {
         // Tolerate common mis-hearings of "hey neon".
         // "neon" is a dictionary word, so the recognizer usually gets it
-        // right; keep "neo" as a fallback for a clipped final n.
-        let pattern = #"\b(hey|hay|hi|a)[,.]?\s+(neon|neo|nion)\b"#
+        // right; the rest are plausible mis-hearings observed or anticipated.
+        // The recognizer sometimes fuses the whole phrase into one token —
+        // observed live: "Hey Neon" -> "Henon".
+        let pattern = #"\b(hey|hay|hi|a)[,.]?\s+(neon|neo|nion|nian|neyon|leon|knee on|neo n)\b|\b(henon|heynon|hanon|heneon|haynon)\b"#
         return text.lowercased().range(of: pattern, options: .regularExpression) != nil
     }
 }

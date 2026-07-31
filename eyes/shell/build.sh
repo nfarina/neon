@@ -33,5 +33,12 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 
-codesign --force --sign - "$APP"
+# Sign with the stable "Neon Dev" certificate so TCC grants survive rebuilds;
+# ad-hoc signing resets microphone permission on every build.
+if security find-identity -v -p codesigning | grep -q "Neon Dev"; then
+  codesign --force --sign "Neon Dev" "$APP"
+else
+  echo "warning: 'Neon Dev' identity not found; ad-hoc signing (mic permission will reset)" >&2
+  codesign --force --sign - "$APP"
+fi
 echo "Built $APP"
