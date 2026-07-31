@@ -14,11 +14,28 @@
     border-top: 1px solid rgba(102, 224, 255, 0.15);
   }
   #debug b { color: #cfeeff; font-weight: 600; margin-left: 6px; }
+  #legend {
+    position: fixed; top: 18px; left: 18px; display: none;
+    padding: 12px 18px; border-radius: 10px; line-height: 1.8;
+    font: 12px ui-monospace, SFMono-Regular, monospace;
+    color: #7fd8e8; background: rgba(4, 10, 14, 0.82);
+    border: 1px solid rgba(102, 224, 255, 0.18);
+  }
+  #legend b { color: #cfeeff; font-weight: 600; display: inline-block; min-width: 40px; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="debug"></div>
+<div id="legend">
+  <div><b>W</b> wake</div>
+  <div><b>S</b> end session</div>
+  <div><b>D</b> debug overlay</div>
+  <div><b>E</b> cycle engine</div>
+  <div><b>T</b> ghost mode</div>
+  <div><b>Tab</b> hold for this legend</div>
+  <div><b>Esc</b> quit</div>
+</div>
 <script>
 "use strict";
 
@@ -282,6 +299,7 @@ window.neon = {
     document.documentElement.style.background = on ? "transparent" : "";
     document.body.style.background = on ? "transparent" : "";
   },
+  legend(show) { document.getElementById("legend").style.display = show ? "block" : "none"; },
   stats(pairs) {
     document.getElementById("debug").innerHTML = pairs
       .map(([k, v]) => `<span>${k}<b>${v}</b></span>`)

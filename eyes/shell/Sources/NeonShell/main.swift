@@ -39,7 +39,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.presentationOptions = [.hideDock, .hideMenuBar]
         NSApp.activate(ignoringOtherApps: true)
 
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            if event.type == .keyUp {
+                if event.keyCode == 48 { self?.showLegend(false); return nil }
+                return event
+            }
             switch event.keyCode {
             case 53:  // esc
                 NSApp.terminate(nil)
@@ -58,6 +62,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil
             case 17:  // t — ghost mode: transparent background over the desktop
                 self?.toggleTransparency()
+                return nil
+            case 48:  // tab (hold) — keyboard shortcut legend
+                if !event.isARepeat { self?.showLegend(true) }
                 return nil
             default:
                 return event
@@ -98,6 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var transparentMode = false
+
+    private func showLegend(_ show: Bool) {
+        webView.evaluateJavaScript("window.neon && neon.legend(\(show))")
+    }
 
     private func toggleTransparency() {
         transparentMode.toggle()

@@ -129,7 +129,10 @@ final class WakeWordListener: NSObject {
                     }
                 }
                 if let error = error as NSError? {
-                    // Includes the routine "no speech detected" timeout — just begin again.
+                    // The recognizer's own end-of-utterance ("no speech
+                    // detected") often beats the trailing-silence poll; a
+                    // pending wake must fire here, not be thrown away.
+                    if self.commandStart != nil { self.fireWake(); return }
                     NSLog("Neon wake: task error \(error.domain) \(error.code): \(error.localizedDescription)")
                     self.restart(after: 0.6)
                 }
