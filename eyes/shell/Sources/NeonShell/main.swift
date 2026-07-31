@@ -1,7 +1,7 @@
 import AppKit
 import WebKit
 
-// Neo kiosk shell: a borderless fullscreen window hosting the eyes web page,
+// Neon kiosk shell: a borderless fullscreen window hosting the eyes web page,
 // plus the wake-word listener. Esc quits; W triggers a wake for testing.
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -53,11 +53,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func triggerWake() {
-        webView.evaluateJavaScript("window.neo && neo.wake()")
+        webView.evaluateJavaScript("window.neon && neon.wake()")
     }
 
     private func loadEyes() {
-        // Bundled resource first (production: inside Neo.app)
+        // Bundled resource first (production: inside Neon.app)
         if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "web") {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
             return

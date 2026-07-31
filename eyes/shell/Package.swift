@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "NeoShell",
+    name: "NeonShell",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "NeoShell", path: "Sources/NeoShell")
+        .executableTarget(name: "NeonShell", path: "Sources/NeonShell")
     ]
 )

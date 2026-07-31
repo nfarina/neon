@@ -4,7 +4,7 @@ import Speech
 // Wake-word detection via continuous on-device speech recognition.
 //
 // This is deliberately the simplest thing that works: transcribe the room
-// and fuzzy-match the transcript for "hey neo". If false accepts/misses
+// and fuzzy-match the transcript for "hey neon". If false accepts/misses
 // become annoying, swap this class for a purpose-built wake-word engine
 // (e.g. Picovoice Porcupine) — the only contract is `onWake`.
 
@@ -21,12 +21,12 @@ final class WakeWordListener: NSObject {
     func start() {
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             guard status == .authorized else {
-                NSLog("Neo: speech recognition not authorized (status \(status.rawValue))")
+                NSLog("Neon: speech recognition not authorized (status \(status.rawValue))")
                 return
             }
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 guard granted else {
-                    NSLog("Neo: microphone access denied")
+                    NSLog("Neon: microphone access denied")
                     return
                 }
                 DispatchQueue.main.async { self?.begin() }
@@ -37,11 +37,11 @@ final class WakeWordListener: NSObject {
     private func begin() {
         let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
         guard let recognizer, recognizer.isAvailable else {
-            NSLog("Neo: speech recognizer unavailable")
+            NSLog("Neon: speech recognizer unavailable")
             return
         }
         if !recognizer.supportsOnDeviceRecognition {
-            NSLog("Neo: on-device recognition unsupported; falling back to server-based")
+            NSLog("Neon: on-device recognition unsupported; falling back to server-based")
         }
         self.recognizer = recognizer
         startEngine()
@@ -59,7 +59,7 @@ final class WakeWordListener: NSObject {
         do {
             try engine.start()
         } catch {
-            NSLog("Neo: audio engine failed to start: \(error)")
+            NSLog("Neon: audio engine failed to start: \(error)")
         }
     }
 
@@ -77,7 +77,7 @@ final class WakeWordListener: NSObject {
                 if let result {
                     let text = result.bestTranscription.formattedString
                     if Self.containsWakePhrase(text) {
-                        NSLog("Neo: wake phrase heard in \"\(text)\"")
+                        NSLog("Neon: wake phrase heard in \"\(text)\"")
                         self.onWake()
                         self.restart(after: 0.2)  // clear transcript so it can't re-trigger
                         return
@@ -116,8 +116,10 @@ final class WakeWordListener: NSObject {
     }
 
     static func containsWakePhrase(_ text: String) -> Bool {
-        // Tolerate common mis-hearings of "hey neo".
-        let pattern = #"\b(hey|hay|hi|a)[,.]?\s+(neo|nio|neyo|nea|neal|neil)\b"#
+        // Tolerate common mis-hearings of "hey neon".
+        // "neon" is a dictionary word, so the recognizer usually gets it
+        // right; keep "neo" as a fallback for a clipped final n.
+        let pattern = #"\b(hey|hay|hi|a)[,.]?\s+(neon|neo|nion)\b"#
         return text.lowercased().range(of: pattern, options: .regularExpression) != nil
     }
 }

@@ -1,4 +1,4 @@
-# Neo
+# Neon
 
 Before working on this project, read `AGENTS.md` in the repository root in
 full. It is the canonical project charter, mission, safety policy, environment
