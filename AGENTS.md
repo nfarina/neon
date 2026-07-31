@@ -271,10 +271,17 @@ Work toward Neon's spoken conversation lives under `voice/`.
   partials (>0.7 s), since on-device segment timestamps are unreliable. Words
   after the name are captured until 0.85 s of trailing silence (6 s cap) and
   sent as the opening user turn — "Neon, set a timer" skips the greeting
-  round trip. A mid-sentence "neon" mention does not wake her. The logic is
-  simulation-tested in a scratch harness (8 scenarios); note the matcher
-  waits the trailing silence even for a bare "Neon", so wake feels ~1 s
-  slower but starts with intent.
+  round trip. A mid-sentence "neon" mention does not wake her. Two hardening
+  rounds from kitchen testing: (1) the recognizer's own end-of-utterance
+  ("no speech detected" error / isFinal) must evaluate a pending wake, not
+  restart past it — it usually beats the 0.85 s trailing-silence poll; and
+  (2) the recognizer *revises* transcripts rather than only appending
+  (observed: junk like "no" replaced wholesale by "Neon what's up"), so the
+  utterance start is the common prefix against a baseline snapshot from the
+  last silence boundary, recomputed at fire time — never a latched word
+  index. The logic lives in a simulation harness (11 scenarios) kept in
+  sync by hand; the matcher waits the trailing silence even for a bare
+  "Neon", so wake feels ~1 s slower but starts with intent.
 - The echo canceller eats the Mac's own speaker output: `say`-based
   self-talk tests are impossible with voice processing on — the wake
   listener literally cannot hear the Mac's own voice (this is why barge-in

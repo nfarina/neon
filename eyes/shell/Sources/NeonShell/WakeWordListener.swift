@@ -37,13 +37,18 @@ final class WakeWordListener: NSObject {
     // someone is speaking and stop during silence, so a wall-clock gap
     // between partials marks an utterance boundary. (Segment timestamps
     // would be cleaner but are unreliable from on-device recognition.)
+    //
+    // `baseline` is the word list as of the last boundary. The current
+    // utterance is everything past the common prefix of baseline and the
+    // latest words — computed fresh each time, because the recognizer
+    // *revises* earlier words rather than only appending (observed: junk
+    // like "no" replaced wholesale by "Neon what's up", which breaks any
+    // index latched earlier).
     private var lastPartialAt = Date.distantPast
-    private var priorWordCount = 0
-    private var burstStart = 0          // word index where the current utterance began
-    private var commandStart: Int?      // word index just past the name, once heard
+    private var baseline: [String] = []
+    private var latestWords: [String] = []
     private var pendingPoll: Timer?
     private var pendingDeadline = Date.distantFuture
-    private var latestWords: [String] = []
 
     func start() {
         active = true
@@ -70,7 +75,6 @@ final class WakeWordListener: NSObject {
         rollover = nil
         pendingPoll?.invalidate()
         pendingPoll = nil
-        commandStart = nil
         task?.cancel()
         task = nil
         request?.endAudio()
@@ -102,9 +106,7 @@ final class WakeWordListener: NSObject {
         guard active, let recognizer else { return }
         restarting = false
         lastPartialAt = .distantPast
-        priorWordCount = 0
-        burstStart = 0
-        commandStart = nil
+        baseline = []
         latestWords = []
         pendingPoll?.invalidate()
         pendingPoll = nil
@@ -123,16 +125,15 @@ final class WakeWordListener: NSObject {
                     self.onTranscript(text)
                     self.handlePartial(text)
                     if result.isFinal {
-                        if self.commandStart != nil { self.fireWake() }
-                        else { self.restart(after: 0.3) }
+                        if !self.evaluateUtterance() { self.restart(after: 0.3) }
                         return
                     }
                 }
                 if let error = error as NSError? {
                     // The recognizer's own end-of-utterance ("no speech
                     // detected") often beats the trailing-silence poll; a
-                    // pending wake must fire here, not be thrown away.
-                    if self.commandStart != nil { self.fireWake(); return }
+                    // pending wake must be evaluated here, not thrown away.
+                    if self.evaluateUtterance() { return }
                     NSLog("Neon wake: task error \(error.domain) \(error.code): \(error.localizedDescription)")
                     self.restart(after: 0.6)
                 }
@@ -189,43 +190,61 @@ final class WakeWordListener: NSObject {
         return nil
     }
 
-    private func handlePartial(_ text: String) {
-        let words = text.lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+    private static func tokenize(_ text: String) -> [String] {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "'"))
+        return text.lowercased()
+            .components(separatedBy: allowed.inverted)
             .filter { !$0.isEmpty }
+    }
+
+    private static func commonPrefix(_ a: [String], _ b: [String]) -> Int {
+        var i = 0
+        while i < a.count && i < b.count && a[i] == b[i] { i += 1 }
+        return i
+    }
+
+    private func handlePartial(_ text: String) {
+        let words = Self.tokenize(text)
         let now = Date()
         // A quiet gap since the last partial marks an utterance boundary.
         if now.timeIntervalSince(lastPartialAt) > Self.utteranceGap {
-            burstStart = min(priorWordCount, words.count)
+            baseline = latestWords
         }
         lastPartialAt = now
-        priorWordCount = words.count
         latestWords = words
 
-        guard commandStart == nil else { return }  // already waiting for the command to finish
-        if let end = Self.nameEnd(in: words, from: burstStart) {
-            dbg("name heard at word \(burstStart); capturing command")
-            commandStart = end
+        guard pendingPoll == nil else { return }  // already waiting for the utterance to finish
+        if Self.nameEnd(in: words, from: Self.commonPrefix(baseline, words)) != nil {
+            dbg("name candidate; waiting for end of utterance")
             pendingDeadline = now.addingTimeInterval(Self.maxCommandWait)
-            pendingPoll?.invalidate()
             pendingPoll = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
                 guard let self else { return }
                 let idle = Date().timeIntervalSince(self.lastPartialAt)
                 if idle > Self.trailingSilence || Date() > self.pendingDeadline {
-                    self.fireWake()
+                    self.evaluateUtterance()
                 }
             }
         }
     }
 
-    private func fireWake() {
+    /// The utterance appears to be over (trailing silence, recognizer final,
+    /// or recognizer end-of-utterance error): if it began with the name,
+    /// wake. Match is computed fresh from the latest transcript so recognizer
+    /// revisions between detection and now can't strand a stale index.
+    @discardableResult
+    private func evaluateUtterance() -> Bool {
         pendingPoll?.invalidate()
         pendingPoll = nil
-        guard let start = commandStart else { return }
-        commandStart = nil
-        let command = latestWords.dropFirst(start).joined(separator: " ")
+        guard active, !restarting else { return false }
+        let cut = Self.commonPrefix(baseline, latestWords)
+        guard let end = Self.nameEnd(in: latestWords, from: cut) else {
+            baseline = latestWords  // utterance consumed; don't rematch it later
+            return false
+        }
+        let command = latestWords.dropFirst(end).joined(separator: " ")
         NSLog("Neon: wake — command: \"\(command)\"")
         onWake(command.isEmpty ? nil : command)
         restart(after: 0.2)  // clear the transcript so it can't re-trigger
+        return true
     }
 }
