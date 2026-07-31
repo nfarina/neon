@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keyMonitor: Any?
     private var debugVisible = false
     private var statsTimer: Timer?
+    private var wakeHeard = ""  // latest wake-listener transcript, for the overlay
     private var providerName = ProcessInfo.processInfo.environment["NEON_PROVIDER"]
         ?? UserDefaults.standard.string(forKey: "neon.voiceProvider") ?? "gemini"
 
@@ -62,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let listener = WakeWordListener()
         listener.onWake = { [weak self] in self?.triggerWake() }
+        listener.onTranscript = { [weak self] text in self?.wakeHeard = text }
         listener.start()
         wakeListener = listener
 
@@ -107,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pairs = [
                 ["engine", "\(providerName) (idle)"],
                 ["lifetime", String(format: "$%.3f", UsageStore.shared.total)],
+                ["mac hears", String(wakeHeard.suffix(70))],
             ]
         }
         if let data = try? JSONSerialization.data(withJSONObject: pairs) {
@@ -124,11 +127,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         session.onAmplitude = { [weak self] amp in
             self?.webView.evaluateJavaScript("window.neon && neon.speaking(\(amp))")
         }
-        session.onClosed = { [weak self] in
+        session.onClosed = { [weak self] reason in
             guard let self else { return }
-            NSLog("Neon: voice session ended")
+            NSLog("Neon: voice session ended (\(reason))")
             self.voiceSession = nil
             self.webView.evaluateJavaScript("window.neon && neon.hold(false)")
+            if reason == "tool" {
+                // The model put itself to sleep — eyes close right away;
+                // the slow dozing-off animation is reserved for idle silence.
+                self.webView.evaluateJavaScript("window.neon && neon.sleep()")
+            }
             self.wakeListener?.start()  // take the microphone back
         }
         voiceSession = session

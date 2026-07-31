@@ -216,9 +216,45 @@ Work toward Neon's spoken conversation lives under `voice/`.
 - Privacy note: the wake listener's continuous transcription is on-device
   only; audio reaches Google only during an open session after the wake
   phrase.
-- Next: camera frames into the live session; tool calling for personal Mac
-  tools; Claude Code handoff for long tasks; revisit AEC/barge-in; tune the
-  15 s idle timeout with kitchen experience.
+- Multi-engine A/B: `VoiceEngine.swift` abstracts the wire protocol
+  (GeminiEngine on `gemini-3.1-flash-live-preview`, OpenAIEngine on
+  `gpt-realtime-2.1`); `VoiceSession` is engine-generic. The E key cycles the
+  engine for the next session (persisted in UserDefaults `neon.voiceProvider`;
+  `NEON_PROVIDER` overrides). The D key toggles a debug overlay (bottom bar,
+  1 s refresh) showing engine, session time, token counts, session and
+  lifetime cost, and a live transcription line — the wake listener's running
+  transcript while idle ("mac hears"), the session's input transcription
+  during a call. Lifetime cost persists in `~/.config/neon/usage.json`.
+- A/B verdict (July 31, 2026, kitchen testing): OpenAI Realtime sounds great
+  but is ~10× Gemini's price ($32/1M audio-in, $64/1M audio-out vs $3/$12) —
+  too expensive for this project. **Gemini is the engine for now.** Grok
+  Voice (~$0.05–0.08/min) is untested: the xAI team has no credits; buying
+  some at console.x.ai unblocks a `wss://api.x.ai/v1/realtime` probe.
+- Tool calling works (validated by `voice/gemini-tool-test.mjs`; wire shape
+  `toolCall.functionCalls[{name, args, id}]`). First tool: `go_to_sleep` —
+  declared to both engines; the model calls it when the user says goodbye or
+  when it woke by accident to background noise. The session closes after the
+  playback queue drains (so a spoken "goodnight" isn't clipped) and the eyes
+  close immediately (`neon.sleep()`), skipping the slow dozing animation,
+  which is reserved for idle-silence closes. The system prompt pairs every
+  goodbye with the tool call — a bare "say goodnight then sleep" instruction
+  was not enough for Gemini to call it, but a natural user goodbye is.
+- Idle timeout semantics: the 15 s clock is *silence after the assistant
+  finished speaking*, not after data arrived — the API delivers reply audio
+  much faster than realtime, so the timer is bumped when the playback queue
+  drains and never fires while audio is still playing. (Before this fix a
+  long answer could hit the idle close mid-playback.)
+- Known metering gaps: sessions closed by `go_to_sleep` can miss the final
+  `usageMetadata` (logged cost reads low); Gemini's output transcription
+  sometimes leaks the literal function-call text (e.g. `do_call:go_to_sleep`)
+  into the "saying:" log line. Both cosmetic at current prices.
+- `NEON_GREETING` overrides the synthetic first turn — used with
+  `NEON_AUTOWAKE=1` to solo-test behaviors (e.g. a natural goodbye greeting
+  verifies the whole tool-sleep path without speaking).
+- Next: camera frames into the live session (Gemini supports 1 FPS video);
+  more tools (Nick has ideas queued); Claude Code handoff for long tasks;
+  wake-phrase accuracy (fast "heyneon" often misses — watch the overlay's
+  "mac hears" line; Porcupine remains the fallback plan).
 
 ## Eyes Proof of Concept
 

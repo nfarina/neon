@@ -15,6 +15,8 @@ func dbg(_ s: String) {
 
 final class WakeWordListener: NSObject {
     var onWake: () -> Void = {}
+    /// Streams the recognizer's running transcript (for the debug overlay).
+    var onTranscript: (String) -> Void = { _ in }
 
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -89,6 +91,7 @@ final class WakeWordListener: NSObject {
                 if let result {
                     let text = result.bestTranscription.formattedString
                     dbg("transcript: \(text)")
+                    self.onTranscript(text)
                     if Self.containsWakePhrase(text) {
                         NSLog("Neon: wake phrase heard in \"\(text)\"")
                         self.onWake()

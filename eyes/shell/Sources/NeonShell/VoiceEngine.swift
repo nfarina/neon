@@ -20,7 +20,17 @@ enum VoiceEvent {
     case outputText(String)
     case interrupted
     case usage(VoiceUsage, cumulative: Bool)  // cumulative: replaces prior totals
+    case toolCall(String)                     // function name
 }
+
+// Tools offered to every engine. go_to_sleep lets the model end the session
+// itself; the shell closes the socket, so no tool response is ever sent.
+let sleepToolName = "go_to_sleep"
+let sleepToolDescription = """
+    End the conversation and go back to sleep. Call this when the user says \
+    goodbye, the conversation is clearly over, or you realize you were woken \
+    by accident and the speech around you is not directed at you.
+    """
 
 protocol VoiceEngine {
     var name: String { get }
@@ -60,6 +70,12 @@ struct GeminiEngine: VoiceEngine {
                 "systemInstruction": ["parts": [["text": system]]],
                 "outputAudioTranscription": [String: String](),
                 "inputAudioTranscription": [String: String](),
+                "tools": [[
+                    "functionDeclarations": [[
+                        "name": sleepToolName,
+                        "description": sleepToolDescription,
+                    ]],
+                ]],
             ],
         ]]
     }
@@ -80,6 +96,12 @@ struct GeminiEngine: VoiceEngine {
     func parse(_ msg: [String: Any]) -> [VoiceEvent] {
         var events: [VoiceEvent] = []
         if msg["setupComplete"] != nil { events.append(.ready) }
+        if let tc = msg["toolCall"] as? [String: Any],
+           let calls = tc["functionCalls"] as? [[String: Any]] {
+            for call in calls {
+                if let name = call["name"] as? String { events.append(.toolCall(name)) }
+            }
+        }
         if let meta = msg["usageMetadata"] as? [String: Any] {
             var u = VoiceUsage()
             for (details, isInput) in [(meta["promptTokensDetails"], true), (meta["responseTokensDetails"], false)] {
@@ -142,6 +164,11 @@ struct OpenAIEngine: VoiceEngine {
             "session": [
                 "type": "realtime",
                 "instructions": system,
+                "tools": [[
+                    "type": "function",
+                    "name": sleepToolName,
+                    "description": sleepToolDescription,
+                ]],
                 "audio": [
                     "input": [
                         "format": ["type": "audio/pcm", "rate": 24000],
@@ -189,6 +216,12 @@ struct OpenAIEngine: VoiceEngine {
             if let t = msg["transcript"] as? String { return [.inputText(t)] }
         case "input_audio_buffer.speech_started":
             return [.interrupted]
+        case "response.output_item.done":
+            if let item = msg["item"] as? [String: Any],
+               item["type"] as? String == "function_call",
+               let name = item["name"] as? String {
+                return [.toolCall(name)]
+            }
         case "response.done":
             if let resp = msg["response"] as? [String: Any],
                let usage = resp["usage"] as? [String: Any] {
