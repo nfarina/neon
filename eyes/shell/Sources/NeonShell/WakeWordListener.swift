@@ -191,6 +191,17 @@ final class WakeWordListener: NSObject {
     private static let trailingSilence: TimeInterval = 0.85  // quiet after the name/command = go
     private static let maxCommandWait: TimeInterval = 12  // fire with what we have by then
 
+    /// A deliberate "hey neon"-style summons *anywhere* in the current
+    /// utterance (bare "neon" stays anchored to the utterance start so
+    /// mid-sentence mentions don't wake her; "hey" + name is unambiguous).
+    private static func heySummons(in words: [String], from start: Int) -> Int? {
+        for i in start..<max(start, words.count) {
+            if fusedWords.contains(words[i]) { return i + 1 }
+            if heyWords.contains(words[i]), let end = nameEnd(in: words, from: i) { return end }
+        }
+        return nil
+    }
+
     /// If an utterance starting at `start` opens with the name, return the
     /// index just past it (where a command would begin).
     private static func nameEnd(in words: [String], from start: Int) -> Int? {
@@ -229,7 +240,8 @@ final class WakeWordListener: NSObject {
         latestWords = words
 
         guard pendingPoll == nil else { return }  // already waiting for the utterance to finish
-        if let end = Self.nameEnd(in: words, from: Self.commonPrefix(baseline, words)) {
+        let cut = Self.commonPrefix(baseline, words)
+        if let end = Self.nameEnd(in: words, from: cut) ?? Self.heySummons(in: words, from: cut) {
             dbg("name candidate; waiting for end of utterance")
             preWakeSignaled = true
             pendingNameEnd = end
@@ -256,6 +268,7 @@ final class WakeWordListener: NSObject {
         guard active, !restarting else { return false }
         let cut = Self.commonPrefix(baseline, latestWords)
         var matched = Self.nameEnd(in: latestWords, from: cut)
+            ?? Self.heySummons(in: latestWords, from: cut)
         if matched == nil, let seen = pendingNameEnd {
             // Long utterances give the recognizer time to revise words
             // *before* the name, which shifts the common-prefix boundary and

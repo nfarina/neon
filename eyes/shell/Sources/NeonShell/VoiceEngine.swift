@@ -21,17 +21,24 @@ enum VoiceEvent {
     case outputText(String)
     case interrupted
     case usage(VoiceUsage, cumulative: Bool)  // cumulative: replaces prior totals
-    case toolCall(String)                     // function name
+    case toolCall(name: String, id: String?)  // function name + provider call id
     case thinking                             // a thought part arrived; model is reasoning
 }
 
-// Tools offered to every engine. go_to_sleep lets the model end the session
-// itself; the shell closes the socket, so no tool response is ever sent.
+// Tools offered to the engines. go_to_sleep lets the model end the session
+// itself (the shell closes the socket; no response sent). capture_image
+// fetches one camera frame on demand — far cheaper than streaming.
 let sleepToolName = "go_to_sleep"
 let sleepToolDescription = """
     End the conversation and go back to sleep. Call this when the user says \
     goodbye, the conversation is clearly over, or you realize you were woken \
     by accident and the speech around you is not directed at you.
+    """
+let captureToolName = "capture_image"
+let captureToolDescription = """
+    Capture a fresh snapshot from your camera so you can see the kitchen \
+    right now. Call this whenever looking would help — what someone is \
+    holding, what's cooking, who's there.
     """
 
 protocol VoiceEngine {
@@ -51,10 +58,13 @@ protocol VoiceEngine {
     func cost(_ u: VoiceUsage, elapsed: TimeInterval) -> Double
     /// Wire message for one JPEG camera frame; nil if the engine takes no video.
     func videoMessage(_ base64: String) -> [String: Any]?
+    /// Reply to a tool call; nil if the engine doesn't take tool responses.
+    func toolResponseMessage(id: String?, name: String, result: String) -> [String: Any]?
 }
 
 extension VoiceEngine {
     func videoMessage(_ base64: String) -> [String: Any]? { nil }
+    func toolResponseMessage(id: String?, name: String, result: String) -> [String: Any]? { nil }
 }
 
 // MARK: - Gemini Live
@@ -66,7 +76,9 @@ struct GeminiEngine: VoiceEngine {
     var textInRate = 0.75, textOutRate = 4.50
     /// Thinking level for Gemini 3.x; nil for 2.5, which uses a different
     /// (budget-based) schema. Validated by voice/gemini-config-test.mjs.
-    var thinkingLevel: String? = "HIGH"
+    /// LOW keeps spoken replies snappy — HIGH added a multi-second pause to
+    /// every turn; search grounding works at any level.
+    var thinkingLevel: String? = "LOW"
     let voice = "Leda"
     let audioInRate = 3.00, audioOutRate = 12.00
     let sendSampleRate = 16000.0
@@ -97,10 +109,10 @@ struct GeminiEngine: VoiceEngine {
                 "inputAudioTranscription": [String: String](),
                 "tools": [
                     ["googleSearch": [String: String]()],
-                    ["functionDeclarations": [[
-                        "name": sleepToolName,
-                        "description": sleepToolDescription,
-                    ]]],
+                    ["functionDeclarations": [
+                        ["name": sleepToolName, "description": sleepToolDescription],
+                        ["name": captureToolName, "description": captureToolDescription],
+                    ]],
                 ],
             ],
         ]]
@@ -123,13 +135,21 @@ struct GeminiEngine: VoiceEngine {
         ["realtimeInput": ["video": ["mimeType": "image/jpeg", "data": base64]]]
     }
 
+    func toolResponseMessage(id: String?, name: String, result: String) -> [String: Any]? {
+        var response: [String: Any] = ["name": name, "response": ["result": result]]
+        if let id { response["id"] = id }
+        return ["toolResponse": ["functionResponses": [response]]]
+    }
+
     func parse(_ msg: [String: Any]) -> [VoiceEvent] {
         var events: [VoiceEvent] = []
         if msg["setupComplete"] != nil { events.append(.ready) }
         if let tc = msg["toolCall"] as? [String: Any],
            let calls = tc["functionCalls"] as? [[String: Any]] {
             for call in calls {
-                if let name = call["name"] as? String { events.append(.toolCall(name)) }
+                if let name = call["name"] as? String {
+                    events.append(.toolCall(name: name, id: call["id"] as? String))
+                }
             }
         }
         if let meta = msg["usageMetadata"] as? [String: Any] {
@@ -253,7 +273,7 @@ struct OpenAIEngine: VoiceEngine {
             if let item = msg["item"] as? [String: Any],
                item["type"] as? String == "function_call",
                let name = item["name"] as? String {
-                return [.toolCall(name)]
+                return [.toolCall(name: name, id: item["call_id"] as? String)]
             }
         case "response.done":
             if let resp = msg["response"] as? [String: Any],

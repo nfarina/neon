@@ -13,6 +13,14 @@ func tokenize(_ text: String) -> [String] {
     return text.lowercased().components(separatedBy: allowed.inverted).filter { !$0.isEmpty }
 }
 
+func heySummons(in words: [String], from start: Int) -> Int? {
+    for i in start..<max(start, words.count) {
+        if fusedWords.contains(words[i]) { return i + 1 }
+        if heyWords.contains(words[i]), let end = nameEnd(in: words, from: i) { return end }
+    }
+    return nil
+}
+
 func nameEnd(in words: [String], from start: Int) -> Int? {
     guard start < words.count else { return nil }
     let w0 = words[start]
@@ -44,7 +52,8 @@ final class Sim {
         lastPartialAt = now
         latestWords = words
         guard !pending else { return }
-        if let end = nameEnd(in: words, from: commonPrefix(baseline, words)) {
+        let cut = commonPrefix(baseline, words)
+        if let end = nameEnd(in: words, from: cut) ?? heySummons(in: words, from: cut) {
             pending = true
             pendingNameEnd = end
         }
@@ -59,6 +68,7 @@ final class Sim {
         pending = false
         let cut = commonPrefix(baseline, latestWords)
         var matched = nameEnd(in: latestWords, from: cut)
+            ?? heySummons(in: latestWords, from: cut)
         if matched == nil, let seen = pendingNameEnd {
             for i in max(0, seen - 5)..<min(latestWords.count, seen + 3) {
                 if let e = nameEnd(in: latestWords, from: i) { matched = e; break }
@@ -115,6 +125,13 @@ run("late revision", [(1.0, "Neon set a"), (1.3, "Neon set a timer"), (1.6, "Neo
 run("apostrophe", [(1.0, "Neon what's the weather")], expect: "what's the weather")
 // "Nia" nickname wakes too
 run("nia nickname", [(1.0, "Nia what time is it")], expect: "what time is it")
+// "hey neon" mid-utterance is a deliberate summons — wakes anywhere
+run("hey neon mid-utterance",
+    [(1.0, "so anyway"), (1.3, "so anyway hey neon"), (1.6, "so anyway hey neon what's cooking")],
+    expect: "what's cooking")
+// but a bare mid-utterance name still does NOT wake
+run("bare name mid-utterance stays quiet",
+    [(1.0, "I"), (1.2, "I think neon"), (1.4, "I think neon signs are cool")], expect: nil)
 // LONG QUESTION: recognizer revises words BEFORE the name mid-capture,
 // shifting the common-prefix boundary — the stored name position recovers it
 run("baseline revised during long question",

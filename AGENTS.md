@@ -318,11 +318,26 @@ Work toward Neon's spoken conversation lives under `voice/`.
   `NEON_AUTOWAKE=1` to solo-test behaviors (e.g. a natural goodbye greeting
   verifies the whole tool-sleep path without speaking).
 - Camera: `CameraFeed.swift` captures 1 FPS VGA JPEGs while a session is
-  open (never otherwise) and sends them as `realtimeInput.video` to Gemini
-  engines (OpenAI engine takes no video; `NEON_CAMERA=0` disables). Image
-  tokens are metered at the audio rate and shown in the overlay ("video
-  in"). First camera use prompts for TCC approval — the prompt only shows
-  when the app is launched normally (`open`), not from a background shell.
+  open (never otherwise), but frames are only *sent* on a `capture_image`
+  tool call — the model looks on demand (frame via `realtimeInput.video` +
+  a `toolResponse`), instead of streaming ~250 tokens/frame it rarely
+  needed. Verified: asked to look, she called the tool, one frame went up,
+  she described the actual scene. OpenAI engine takes no video;
+  `NEON_CAMERA=0` disables. First camera use prompts for TCC approval —
+  the prompt only shows when the app is launched normally (`open`).
+- Latency: `thinkingLevel` is LOW by default — HIGH added a multi-second
+  deliberation to every spoken turn; search grounding works at any level.
+- Playback truth: `scheduleBuffer` completion uses `.dataPlayedBack` — the
+  default `.dataConsumed` fires when the mixer *reads* a buffer, up to a
+  chunk before the speaker finishes, which made tool-closes clip goodbyes
+  even after waiting for the queue to drain. Tool-close also adds a 0.35 s
+  margin after quiet.
+- "Hey/ok + neon" (or a fused "henon") wakes from *anywhere* in the current
+  utterance — an explicit summons needs no utterance-boundary anchoring;
+  bare "neon" stays start-anchored so mentions don't wake her.
+- Personality lives in the VoiceSession system prompt: bright, playful,
+  opinionated, light banter — but never sycophantic or theatrical, no
+  catchphrases (and still no Valorant).
 - Short-term memory: `ConversationLog` appends each session's transcript
   (from the input/output transcription events) to
   `~/.config/neon/conversations.md`, capped at 30k chars; the last ~2.5k

@@ -17,10 +17,20 @@ final class VoiceSession: NSObject {
     var onClosed: (String) -> Void = { _ in }
 
     private static let system = """
-        You are Neon, an AI assistant who lives on a MacBook in Nick's \
-        kitchen. Your visual form is a pair of glowing cyan eyes. Be warm, \
-        quick, and genuinely helpful. Keep spoken replies short and natural \
-        — no catchphrases, no persona theatrics.
+        You are Neon, an AI who lives on a MacBook in the kitchen of Nick's \
+        family home. Your visual form is a pair of glowing cyan eyes.
+
+        Personality: bright, quick-witted, and a little playful — the kind \
+        of presence that makes the kitchen more fun. You have opinions and \
+        you're happy to share them. Tease gently, celebrate small things, \
+        enjoy a bit of banter, and be genuinely curious about what's going \
+        on around you. Never sycophantic, never theatrical, no catchphrases \
+        — your charm is that you sound natural. This is spoken conversation: \
+        keep replies short, casual, and warm; save the long version for when \
+        someone actually asks for detail.
+
+        You have a camera: call \(captureToolName) whenever seeing would \
+        help — what someone's holding, what's on the stove, who walked in.
 
         You hear everything near the microphone, including people talking to \
         each other rather than to you. If speech clearly isn't directed at \
@@ -62,6 +72,7 @@ final class VoiceSession: NSObject {
     private var usage = VoiceUsage()
     private var heard = ""  // running input transcript, for the debug overlay
     private var camera: CameraFeed?
+    private var latestFrame: String?  // freshest camera JPEG (base64), sent only on capture_image
     private var transcript: [(speaker: String, text: String)] = []
 
     // Playback bookkeeping; also drives the half-duplex fallback when the
@@ -266,9 +277,10 @@ final class VoiceSession: NSObject {
                 } else {
                     record("Neon", t)
                 }
-            case .toolCall(let name):
+            case .toolCall(let name, let id):
                 NSLog("Neon voice: tool call: \(name)")
                 if name == sleepToolName { requestSleep() }
+                else if name == captureToolName { handleCapture(id: id) }
             case .interrupted:
                 AudioHub.shared.player.stop()
                 pendingPlaybacks = 0
@@ -292,7 +304,11 @@ final class VoiceSession: NSObject {
             guard let self, !self.closed else { return }
             let audioQuiet = Date().timeIntervalSince(self.lastAudioAt) > 0.7
             if (self.pendingPlaybacks <= 0 && audioQuiet) || Date() > deadline {
-                self.close(reason: "tool")
+                self.sleepTimer?.invalidate()
+                // Small margin so the very last samples clear the hardware.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    self.close(reason: "tool")
+                }
             }
         }
     }
@@ -328,12 +344,30 @@ final class VoiceSession: NSObject {
         guard engine.videoMessage("") != nil,  // engine takes video at all
               ProcessInfo.processInfo.environment["NEON_CAMERA"] != "0" else { return }
         let cam = CameraFeed()
+        // Frames are only *captured* continuously; they're sent to the model
+        // solely on a capture_image tool call. (Streaming 1 FPS burned ~250
+        // tokens per frame for imagery the model rarely needed.)
         cam.onFrame = { [weak self] b64 in
-            guard let self, !self.closed, let msg = self.engine.videoMessage(b64) else { return }
-            self.sendJSON(msg)
+            self?.latestFrame = b64
         }
         camera = cam
         cam.start()
+    }
+
+    private func handleCapture(id: String?) {
+        if let frame = latestFrame, let msg = engine.videoMessage(frame) {
+            NSLog("Neon voice: capture_image — sending frame (\(frame.count / 1024) KB)")
+            sendJSON(msg)
+            if let resp = engine.toolResponseMessage(
+                id: id, name: captureToolName,
+                result: "Image captured — it's arriving as a video frame now.") {
+                sendJSON(resp)
+            }
+        } else if let resp = engine.toolResponseMessage(
+            id: id, name: captureToolName, result: "Camera unavailable right now.") {
+            NSLog("Neon voice: capture_image — no frame available")
+            sendJSON(resp)
+        }
     }
 
     private func sendMic(_ buffer: AVAudioPCMBuffer) {
@@ -384,7 +418,11 @@ final class VoiceSession: NSObject {
         onAmplitude(amp)
         pendingPlaybacks += 1
         let player = AudioHub.shared.player
-        player.scheduleBuffer(buffer) { [weak self] in
+        // .dataPlayedBack: fire when the audio has actually left the speaker.
+        // The default (.dataConsumed) fires when the mixer *reads* the buffer
+        // — up to a chunk early — which made tool-closes clip goodbyes.
+        player.scheduleBuffer(buffer, at: nil, options: [],
+                              completionCallbackType: .dataPlayedBack) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.pendingPlaybacks -= 1
