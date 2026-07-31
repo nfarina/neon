@@ -10,6 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var wakeListener: WakeWordListener?
     private var voiceSession: VoiceSession?
     private var keyMonitor: Any?
+    private var debugVisible = false
+    private var statsTimer: Timer?
+    private var providerName = ProcessInfo.processInfo.environment["NEON_PROVIDER"]
+        ?? UserDefaults.standard.string(forKey: "neon.voiceProvider") ?? "gemini"
 
     func applicationDidFinishLaunching(_ note: Notification) {
         guard let screen = NSScreen.main else { fatalError("no screen") }
@@ -45,6 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 1:   // s — end the voice session early
                 self?.voiceSession?.close(reason: "manual")
                 return nil
+            case 2:   // d — toggle the debug overlay
+                self?.toggleDebugOverlay()
+                return nil
+            case 14:  // e — cycle voice engine (takes effect next session)
+                self?.cycleEngine()
+                return nil
             default:
                 return event
             }
@@ -69,12 +79,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startVoiceSession()
     }
 
+    private func toggleDebugOverlay() {
+        debugVisible.toggle()
+        webView.evaluateJavaScript("window.neon && neon.debug(\(debugVisible))")
+        statsTimer?.invalidate()
+        statsTimer = nil
+        if debugVisible {
+            pushStats()
+            statsTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                self?.pushStats()
+            }
+        }
+    }
+
+    private func cycleEngine() {
+        providerName = providerName == "gemini" ? "openai" : "gemini"
+        UserDefaults.standard.set(providerName, forKey: "neon.voiceProvider")
+        NSLog("Neon: voice engine -> \(providerName) (next session)")
+        pushStats()
+    }
+
+    private func pushStats() {
+        let pairs: [[String]]
+        if let session = voiceSession {
+            pairs = session.statsPairs()
+        } else {
+            pairs = [
+                ["engine", "\(providerName) (idle)"],
+                ["lifetime", String(format: "$%.3f", UsageStore.shared.total)],
+            ]
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: pairs) {
+            let json = String(decoding: data, as: UTF8.self)
+            webView.evaluateJavaScript("window.neon && neon.stats(\(json))")
+        }
+    }
+
     private func startVoiceSession() {
         guard voiceSession == nil else { return }
         NSLog("Neon: starting voice session")
         wakeListener?.stop()  // hand the microphone to the conversation
         webView.evaluateJavaScript("window.neon && neon.hold(true)")
-        let session = VoiceSession()
+        let session = VoiceSession(engine: makeEngine(providerName))
         session.onAmplitude = { [weak self] amp in
             self?.webView.evaluateJavaScript("window.neon && neon.speaking(\(amp))")
         }

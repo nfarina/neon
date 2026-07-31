@@ -1,83 +1,110 @@
 import AVFoundation
 import Foundation
 
-// A live spoken conversation with Gemini over the Live API WebSocket.
-// Owns the microphone and speakers for its lifetime: mic audio goes up as
-// 16 kHz PCM, 24 kHz PCM replies are played back, and Apple's voice
-// processing provides echo cancellation so Neon does not hear itself.
-// The message schema is validated by voice/gemini-live-audio-test.mjs.
+// A live spoken conversation over a realtime speech-to-speech API, generic
+// across providers via VoiceEngine. Streams mic audio up from the shared
+// AudioHub, plays replies through it, and meters token usage into costs.
 final class VoiceSession: NSObject {
-    var onAmplitude: (Float) -> Void = { _ in }   // 0..1 while Neon speaks
+    var onAmplitude: (Float) -> Void = { _ in }
     var onClosed: () -> Void = {}
 
-    private static let model = "gemini-2.5-flash-native-audio-latest"
     private static let system = """
         You are Neon, an AI assistant who lives on a MacBook in Nick's \
         kitchen. Your visual form is a pair of glowing cyan eyes. Be warm, \
         quick, and genuinely helpful. Keep spoken replies short and natural \
         — no catchphrases, no persona theatrics.
         """
+    private static let greeting =
+        "(Nick just said the wake phrase.) Greet him in a word or two and ask what he needs."
     private static let idleSeconds: TimeInterval = 15
 
+    let engine: VoiceEngine
     private var ws: URLSessionWebSocketTask?
     private var consumerId: UUID?
     private var inputConverter: AVAudioConverter?
-    private let sendFormat = AVAudioFormat(
-        commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
+    private let sendFormat: AVAudioFormat
     private let playFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
     private var idleTimer: Timer?
     private var closed = false
-    // Playback bookkeeping. When the hub's echo cancellation is active the
-    // mic streams continuously (true barge-in); when it is not, these drive
-    // the half-duplex fallback that mutes the mic while Neon speaks.
+    private let sessionStart = Date()
+    private var usage = VoiceUsage()
+
+    // Playback bookkeeping; also drives the half-duplex fallback when the
+    // hub's echo cancellation is unavailable.
     private var pendingPlaybacks = 0
     private var playbackTailUntil = Date.distantPast
+
+    init(engine: VoiceEngine) {
+        self.engine = engine
+        self.sendFormat = AVAudioFormat(
+            commonFormat: .pcmFormatInt16, sampleRate: engine.sendSampleRate,
+            channels: 1, interleaved: true)!
+        super.init()
+    }
 
     // MARK: - Lifecycle
 
     func start() {
-        guard let key = Self.loadKey() else {
-            NSLog("Neon voice: GEMINI_API_KEY not found in ~/.config/neon/secrets.env")
+        guard let key = Self.loadKey(engine.keyName) else {
+            NSLog("Neon voice: \(engine.keyName) not found in ~/.config/neon/secrets.env")
             DispatchQueue.main.async { self.onClosed() }
             return
         }
-        let url = URL(string: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=\(key)")!
-        let task = URLSession.shared.webSocketTask(with: url)
+        var request = URLRequest(url: engine.url(key: key))
+        for (k, v) in engine.headers(key: key) { request.setValue(v, forHTTPHeaderField: k) }
+        let task = URLSession.shared.webSocketTask(with: request)
         ws = task
         task.resume()
         receiveLoop()
-        sendJSON([
-            "setup": [
-                "model": "models/\(Self.model)",
-                "generationConfig": ["responseModalities": ["AUDIO"]],
-                "systemInstruction": ["parts": [["text": Self.system]]],
-                "outputAudioTranscription": [String: String](),
-                "inputAudioTranscription": [String: String](),
-            ],
-        ])
+        for msg in engine.openMessages(system: Self.system) { sendJSON(msg) }
         bumpIdle()
+        NSLog("Neon voice: connecting to \(engine.name) (\(engine.model))")
     }
 
     func close(reason: String) {
         guard !closed else { return }
         closed = true
-        NSLog("Neon voice: closing (\(reason))")
+        NSLog("Neon voice: closing (\(reason)) — \(costLine())")
         idleTimer?.invalidate()
         AudioHub.shared.removeConsumer(consumerId)
         consumerId = nil
-        AudioHub.shared.player.stop()  // the shared engine keeps running
+        AudioHub.shared.player.stop()
         ws?.cancel(with: .normalClosure, reason: nil)
+        UsageStore.shared.record(engine: engine.name, cost: currentCost())
         DispatchQueue.main.async { self.onClosed() }
     }
 
-    private static func loadKey() -> String? {
+    private static func loadKey(_ name: String) -> String? {
         let path = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/neon/secrets.env")
         guard let text = try? String(contentsOf: path, encoding: .utf8) else { return nil }
-        for line in text.split(separator: "\n") where line.hasPrefix("GEMINI_API_KEY=") {
-            return String(line.dropFirst("GEMINI_API_KEY=".count))
+        for line in text.split(separator: "\n") where line.hasPrefix("\(name)=") {
+            return String(line.dropFirst(name.count + 1))
         }
         return nil
+    }
+
+    // MARK: - Stats
+
+    func currentCost() -> Double {
+        engine.cost(usage, elapsed: Date().timeIntervalSince(sessionStart))
+    }
+
+    private func costLine() -> String {
+        String(format: "in %d out %d tokens, ~$%.4f", usage.audioIn + usage.textIn,
+               usage.audioOut + usage.textOut, currentCost())
+    }
+
+    func statsPairs() -> [[String]] {
+        let elapsed = Int(Date().timeIntervalSince(sessionStart))
+        return [
+            ["engine", "\(engine.name) · \(engine.model)"],
+            ["session", String(format: "%d:%02d", elapsed / 60, elapsed % 60)],
+            ["audio in/out", "\(usage.audioIn)/\(usage.audioOut) tok"],
+            ["text in/out", "\(usage.textIn)/\(usage.textOut) tok"],
+            ["session cost", String(format: "$%.4f", currentCost())],
+            ["lifetime", String(format: "$%.3f", UsageStore.shared.total + currentCost())],
+        ]
     }
 
     // MARK: - WebSocket
@@ -112,46 +139,28 @@ final class VoiceSession: NSObject {
     }
 
     private func handleMessage(_ msg: [String: Any]) {
-        if msg["setupComplete"] != nil {
-            NSLog("Neon voice: session ready")
-            startAudio()
-            // Acknowledge the wake phrase right away so the wake feels heard.
-            sendJSON([
-                "clientContent": [
-                    "turns": [[
-                        "role": "user",
-                        "parts": [["text": "(Nick just said the wake phrase.) Greet him in a word or two and ask what he needs."]],
-                    ]],
-                    "turnComplete": true,
-                ],
-            ])
-            return
-        }
-        guard let sc = msg["serverContent"] as? [String: Any] else { return }
-        if sc["interrupted"] != nil {
-            // Barge-in: drop everything queued and keep listening.
-            AudioHub.shared.player.stop()
-            pendingPlaybacks = 0
-            playbackTailUntil = Date.distantPast
-            AudioHub.shared.player.play()
-        }
-        if let turn = sc["modelTurn"] as? [String: Any],
-           let parts = turn["parts"] as? [[String: Any]] {
-            for part in parts {
-                if let inline = part["inlineData"] as? [String: Any],
-                   let b64 = inline["data"] as? String,
-                   let data = Data(base64Encoded: b64) {
-                    enqueuePlayback(data)
-                }
+        for event in engine.parse(msg) {
+            switch event {
+            case .ready:
+                NSLog("Neon voice: session ready")
+                startAudio()
+                for m in engine.readyMessages(greeting: Self.greeting) { sendJSON(m) }
+            case .audio(let data):
+                enqueuePlayback(data)
+                bumpIdle()
+            case .inputText(let t):
+                NSLog("Neon voice: heard: \(t)")
+                bumpIdle()
+            case .outputText(let t):
+                NSLog("Neon voice: saying: \(t)")
+            case .interrupted:
+                AudioHub.shared.player.stop()
+                pendingPlaybacks = 0
+                playbackTailUntil = Date.distantPast
+                AudioHub.shared.player.play()
+            case .usage(let u, let cumulative):
+                if cumulative { usage = u } else { usage.add(u) }
             }
-            bumpIdle()
-        }
-        if let tx = sc["inputTranscription"] as? [String: Any], let t = tx["text"] as? String {
-            NSLog("Neon voice: heard: \(t)")
-            bumpIdle()
-        }
-        if let tx = sc["outputTranscription"] as? [String: Any], let t = tx["text"] as? String {
-            NSLog("Neon voice: saying: \(t)")
         }
     }
 
@@ -174,8 +183,7 @@ final class VoiceSession: NSObject {
 
     private func sendMic(_ buffer: AVAudioPCMBuffer) {
         guard !closed, let converter = inputConverter else { return }
-        // Half-duplex fallback, only when echo cancellation is unavailable:
-        // stay quiet while Neon's reply is playing (+ tail).
+        // Half-duplex fallback, only when echo cancellation is unavailable.
         if !AudioHub.shared.voiceProcessing,
            pendingPlaybacks > 0 || Date() < playbackTailUntil { return }
         let ratio = sendFormat.sampleRate / buffer.format.sampleRate
@@ -191,11 +199,7 @@ final class VoiceSession: NSObject {
         }
         guard convError == nil, out.frameLength > 0, let ch = out.int16ChannelData else { return }
         let data = Data(bytes: ch[0], count: Int(out.frameLength) * 2)
-        sendJSON([
-            "realtimeInput": [
-                "audio": ["mimeType": "audio/pcm;rate=16000", "data": data.base64EncodedString()],
-            ],
-        ])
+        sendJSON(engine.audioMessage(data.base64EncodedString()))
     }
 
     private func enqueuePlayback(_ data: Data) {
@@ -238,6 +242,33 @@ final class VoiceSession: NSObject {
             self.idleTimer = Timer.scheduledTimer(withTimeInterval: Self.idleSeconds, repeats: false) { [weak self] _ in
                 self?.close(reason: "idle")
             }
+        }
+    }
+}
+
+// MARK: - Persistent lifetime usage
+
+final class UsageStore {
+    static let shared = UsageStore()
+    private(set) var total: Double = 0
+    private(set) var byEngine: [String: Double] = [:]
+    private let path = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".config/neon/usage.json")
+
+    private init() {
+        if let data = try? Data(contentsOf: path),
+           let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            total = obj["total"] as? Double ?? 0
+            byEngine = obj["byEngine"] as? [String: Double] ?? [:]
+        }
+    }
+
+    func record(engine: String, cost: Double) {
+        total += cost
+        byEngine[engine, default: 0] += cost
+        let obj: [String: Any] = ["total": total, "byEngine": byEngine]
+        if let data = try? JSONSerialization.data(withJSONObject: obj, options: .prettyPrinted) {
+            try? data.write(to: path)
         }
     }
 }

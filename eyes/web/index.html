@@ -6,10 +6,19 @@
 <style>
   html, body { margin: 0; height: 100%; background: #04060a; overflow: hidden; cursor: none; }
   canvas { display: block; width: 100vw; height: 100vh; }
+  #debug {
+    position: fixed; left: 0; right: 0; bottom: 0; display: none;
+    gap: 22px; padding: 10px 18px; flex-wrap: wrap;
+    font: 12px ui-monospace, SFMono-Regular, monospace;
+    color: #7fd8e8; background: rgba(4, 10, 14, 0.72);
+    border-top: 1px solid rgba(102, 224, 255, 0.15);
+  }
+  #debug b { color: #cfeeff; font-weight: 600; margin-left: 6px; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="debug"></div>
 <script>
 "use strict";
 
@@ -262,6 +271,12 @@ window.neon = {
   wake, sleep,
   hold(b) { hold = !!b; if (!hold && state === "awake") awakeUntil = now + 2; },
   speaking(a) { speakTarget = Math.min(1, Math.max(0, a)); },
+  debug(show) { document.getElementById("debug").style.display = show ? "flex" : "none"; },
+  stats(pairs) {
+    document.getElementById("debug").innerHTML = pairs
+      .map(([k, v]) => `<span>${k}<b>${v}</b></span>`)
+      .join("");
+  },
   get state() { return state; },
 };
 addEventListener("keydown", e => {
