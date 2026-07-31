@@ -30,7 +30,7 @@ final class VoiceSession: NSObject {
     private static let greeting =
         ProcessInfo.processInfo.environment["NEON_GREETING"]
         ?? "(Nick just said the wake phrase.) Greet him in a word or two and ask what he needs."
-    private static let idleSeconds: TimeInterval = 15
+    private static let idleSeconds: TimeInterval = 7
 
     let engine: VoiceEngine
     private var ws: URLSessionWebSocketTask?

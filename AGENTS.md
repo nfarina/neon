@@ -230,6 +230,12 @@ Work toward Neon's spoken conversation lives under `voice/`.
   too expensive for this project. **Gemini is the engine for now.** Grok
   Voice (~$0.05–0.08/min) is untested: the xAI team has no credits; buying
   some at console.x.ai unblocks a `wss://api.x.ai/v1/realtime` probe.
+- Gemini session config (validated by `voice/gemini-config-test.mjs`): voice
+  is Leda (`speechConfig.voiceConfig.prebuiltVoiceConfig`), Gemini 3.x gets
+  `thinkingConfig.thinkingLevel: HIGH` (2.5 uses a budget schema instead, so
+  the gemini25 engine sends none), and Google Search grounding is on via a
+  `googleSearch` tools entry — verified returning genuinely current
+  headlines from both models. Idle timeout is 7 s of post-reply silence.
 - Tool calling works (validated by `voice/gemini-tool-test.mjs`; wire shape
   `toolCall.functionCalls[{name, args, id}]`). First tool: `go_to_sleep` —
   declared to both engines; the model calls it when the user says goodbye or

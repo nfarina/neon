@@ -63,6 +63,10 @@ struct GeminiEngine: VoiceEngine {
     var model = "gemini-3.1-flash-live-preview"
     // Pricing per 1M tokens; both native-audio models share audio rates.
     var textInRate = 0.75, textOutRate = 4.50
+    /// Thinking level for Gemini 3.x; nil for 2.5, which uses a different
+    /// (budget-based) schema. Validated by voice/gemini-config-test.mjs.
+    var thinkingLevel: String? = "HIGH"
+    let voice = "Leda"
     let audioInRate = 3.00, audioOutRate = 12.00
     let sendSampleRate = 16000.0
     let keyName = "GEMINI_API_KEY"
@@ -73,19 +77,27 @@ struct GeminiEngine: VoiceEngine {
     func headers(key: String) -> [String: String] { [:] }
 
     func openMessages(system: String) -> [[String: Any]] {
-        [[
+        var generationConfig: [String: Any] = [
+            "responseModalities": ["AUDIO"],
+            "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": voice]]],
+        ]
+        if let thinkingLevel {
+            generationConfig["thinkingConfig"] = ["thinkingLevel": thinkingLevel]
+        }
+        return [[
             "setup": [
                 "model": "models/\(model)",
-                "generationConfig": ["responseModalities": ["AUDIO"]],
+                "generationConfig": generationConfig,
                 "systemInstruction": ["parts": [["text": system]]],
                 "outputAudioTranscription": [String: String](),
                 "inputAudioTranscription": [String: String](),
-                "tools": [[
-                    "functionDeclarations": [[
+                "tools": [
+                    ["googleSearch": [String: String]()],
+                    ["functionDeclarations": [[
                         "name": sleepToolName,
                         "description": sleepToolDescription,
-                    ]],
-                ]],
+                    ]]],
+                ],
             ],
         ]]
     }
@@ -280,7 +292,7 @@ func makeEngine(_ name: String) -> VoiceEngine {
         // GA native-audio model — same audio rates as 3.1, cheaper text.
         // A/B candidate for less tool-call verbalization than the preview.
         return GeminiEngine(name: "gemini25", model: "gemini-2.5-flash-native-audio-latest",
-                            textInRate: 0.50, textOutRate: 2.00)
+                            textInRate: 0.50, textOutRate: 2.00, thinkingLevel: nil)
     default: return GeminiEngine()
     }
 }
