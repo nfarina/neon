@@ -23,7 +23,9 @@ final class VoiceSession: NSObject {
         When the conversation ends — the user says goodbye, is clearly done, \
         or tells you to sleep — say a brief goodbye and then always call \
         \(sleepToolName) in the same turn. Also call it (without speaking) if \
-        you were woken by mistake and hear only background chatter or noise.
+        you were woken by mistake and hear only background chatter or noise. \
+        Invoke tools only as real function calls; never say or spell a tool's \
+        name out loud.
         """
     private static let greeting =
         ProcessInfo.processInfo.environment["NEON_GREETING"]
@@ -48,8 +50,13 @@ final class VoiceSession: NSObject {
     private var pendingPlaybacks = 0
     private var playbackTailUntil = Date.distantPast
 
-    init(engine: VoiceEngine) {
+    /// The words spoken after the wake name, if any — sent as the opening
+    /// user turn instead of asking for a greeting.
+    private let firstUtterance: String?
+
+    init(engine: VoiceEngine, firstUtterance: String? = nil) {
         self.engine = engine
+        self.firstUtterance = firstUtterance
         self.sendFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16, sampleRate: engine.sendSampleRate,
             channels: 1, interleaved: true)!
@@ -159,7 +166,8 @@ final class VoiceSession: NSObject {
             case .ready:
                 NSLog("Neon voice: session ready")
                 startAudio()
-                for m in engine.readyMessages(greeting: Self.greeting) { sendJSON(m) }
+                let opening = firstUtterance ?? Self.greeting
+                for m in engine.readyMessages(greeting: opening) { sendJSON(m) }
             case .audio(let data):
                 enqueuePlayback(data)
                 bumpIdle()
@@ -169,6 +177,14 @@ final class VoiceSession: NSObject {
                 bumpIdle()
             case .outputText(let t):
                 NSLog("Neon voice: saying: \(t)")
+                // Gemini live sometimes verbalizes the tool call into the
+                // audio channel (observed: "do_call:go_to_sleep{}") instead
+                // of emitting a real toolCall. Treat the leak as the call.
+                if t.contains(sleepToolName) || t.contains("do_call") {
+                    NSLog("Neon voice: tool-call leak in speech; treating as \(sleepToolName)")
+                    sleepRequested = true
+                    if pendingPlaybacks <= 0 { close(reason: "tool") }
+                }
             case .toolCall(let name):
                 NSLog("Neon voice: tool call: \(name)")
                 if name == sleepToolName {

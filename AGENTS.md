@@ -248,6 +248,27 @@ Work toward Neon's spoken conversation lives under `voice/`.
   `usageMetadata` (logged cost reads low); Gemini's output transcription
   sometimes leaks the literal function-call text (e.g. `do_call:go_to_sleep`)
   into the "saying:" log line. Both cosmetic at current prices.
+- Gemini live-preview tool-calling quirk (observed in the kitchen): the model
+  sometimes *speaks* the call — literally saying "go to sleep" with
+  `do_call:go_to_sleep{}` in the output transcription — instead of emitting a
+  real `toolCall`. VoiceSession treats that transcript leak as the call
+  (fallback in the `.outputText` handler), and the system prompt forbids
+  speaking tool names aloud.
+- Wake redesign (after kitchen testing showed "hey neon" only matched when
+  spoken with a deliberate pause): the trigger is now the *name at the start
+  of an utterance* — silence, then "neon" (hey optional), optionally followed
+  by words. Utterance boundaries come from wall-clock gaps between recognizer
+  partials (>0.7 s), since on-device segment timestamps are unreliable. Words
+  after the name are captured until 0.85 s of trailing silence (6 s cap) and
+  sent as the opening user turn — "Neon, set a timer" skips the greeting
+  round trip. A mid-sentence "neon" mention does not wake her. The logic is
+  simulation-tested in a scratch harness (8 scenarios); note the matcher
+  waits the trailing silence even for a bare "Neon", so wake feels ~1 s
+  slower but starts with intent.
+- The echo canceller eats the Mac's own speaker output: `say`-based
+  self-talk tests are impossible with voice processing on — the wake
+  listener literally cannot hear the Mac's own voice (this is why barge-in
+  works). Acoustic wake testing requires a human in the room.
 - `NEON_GREETING` overrides the synthetic first turn — used with
   `NEON_AUTOWAKE=1` to solo-test behaviors (e.g. a natural goodbye greeting
   verifies the whole tool-sleep path without speaking).

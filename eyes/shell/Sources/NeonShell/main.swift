@@ -62,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let listener = WakeWordListener()
-        listener.onWake = { [weak self] in self?.triggerWake() }
+        listener.onWake = { [weak self] command in self?.triggerWake(command: command) }
         listener.onTranscript = { [weak self] text in self?.wakeHeard = text }
         listener.start()
         wakeListener = listener
@@ -76,9 +76,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func triggerWake() {
+    private func triggerWake(command: String? = nil) {
         webView.evaluateJavaScript("window.neon && neon.wake()")
-        startVoiceSession()
+        startVoiceSession(command: command)
     }
 
     private func toggleDebugOverlay() {
@@ -118,12 +118,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func startVoiceSession() {
+    private func startVoiceSession(command: String? = nil) {
         guard voiceSession == nil else { return }
         NSLog("Neon: starting voice session")
         wakeListener?.stop()  // hand the microphone to the conversation
         webView.evaluateJavaScript("window.neon && neon.hold(true)")
-        let session = VoiceSession(engine: makeEngine(providerName))
+        let session = VoiceSession(engine: makeEngine(providerName), firstUtterance: command)
         session.onAmplitude = { [weak self] amp in
             self?.webView.evaluateJavaScript("window.neon && neon.speaking(\(amp))")
         }
