@@ -139,6 +139,34 @@ As of July 31, 2026:
   selective file transfers.
 - This directory is a Git repository on the `main` branch.
 
+## Voice Lab
+
+Work toward Neon's spoken conversation lives under `voice/`.
+
+- API keys for OpenAI, Gemini, and xAI are in `~/.config/neon/secrets.env`
+  (mode 600, outside the repo). The Gemini key is valid for the AI Studio
+  `generativelanguage.googleapis.com` endpoint.
+- The current plan is a native speech-to-speech session layer for
+  conversation (Gemini Live first — its 1 FPS camera input suits the kitchen
+  and it is the cheapest), with Neon's personal Mac tools exposed to the
+  session via tool calling, and long tasks handed off to Claude Code.
+  OpenAI Realtime and Grok Voice are the A/B alternatives; all three keys
+  are on hand.
+- `voice/gemini-live-test.mjs` — dependency-free Node harness proving the
+  Gemini Live API round trip: WebSocket session, text turn in, 24 kHz PCM
+  audio out, played via `afplay`, with output transcription. Usage:
+  `node gemini-live-test.mjs [model] [prompt...]`.
+- Live-capable model names on this key as of July 31, 2026:
+  `gemini-2.5-flash-native-audio-latest` (plus dated previews),
+  `gemini-3.1-flash-live-preview`, `gemini-3.5-live-translate-preview`.
+  Both tested working; the harness defaults to native-audio-latest.
+- Neon's first spoken words (native-audio-latest, July 31, 2026): "Zap!
+  Just testing the speakers, Nick. I'm Neon, your new AI assistant. Let's
+  get things done, fast!"
+- Next step: a Swift `VoiceSession` in the shell streaming mic audio to
+  Gemini Live and playing replies, opened on wake word, with the eyes
+  reacting to session state; then camera frames.
+
 ## Eyes Proof of Concept
 
 The first ambient-assistant implementation exists under `eyes/`:
