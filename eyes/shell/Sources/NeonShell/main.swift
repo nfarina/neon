@@ -87,7 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         listener.onTranscript = { [weak self] text in
             self?.wakeHeard = text
-            // A partial arriving means someone is talking — listening cue.
+            // A partial arriving means someone is talking — listening cue,
+            // and evidence against idle/doze hangup (works at a distance
+            // where the session's mic-energy gate misses).
+            self?.voiceSession?.noteVoiceActivity()
             self?.webView.evaluateJavaScript("window.neon && neon.hearing(0.55)")
         }
         listener.start()

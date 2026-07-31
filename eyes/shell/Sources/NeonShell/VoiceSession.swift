@@ -27,7 +27,8 @@ final class VoiceSession: NSObject {
 
         You hear everything near the microphone, including people talking to \
         each other rather than to you. If speech clearly isn't directed at \
-        you, don't respond to it.
+        you, don't respond to it, comment on it, or echo it — just stay \
+        quiet until you're addressed again.
 
         When the conversation ends — the user says goodbye, is clearly done, \
         or tells you to sleep — say a brief goodbye and then always call \
@@ -148,6 +149,14 @@ final class VoiceSession: NSObject {
 
     func currentCost() -> Double {
         engine.cost(usage, elapsed: Date().timeIntervalSince(sessionStart))
+    }
+
+    /// External evidence that someone in the room is talking (the wake
+    /// listener's recognizer produced a partial). Far more distance-tolerant
+    /// than the mic RMS gate; keeps the idle/doze logic from hanging up on
+    /// quiet or far-away speakers.
+    func noteVoiceActivity() {
+        lastVoiceAt = Date()
     }
 
     private func costLine() -> String {
@@ -334,7 +343,7 @@ final class VoiceSession: NSObject {
         let n = Int(out.frameLength)
         for i in 0..<n { let v = Int64(ch[0][i]); acc += v * v }
         let rms = sqrt(Double(acc) / Double(n))
-        if rms > 350 {  // ~1% of full scale ≈ speech, not room hum
+        if rms > 250 {  // low bar: quiet/distant speech must still count
             lastVoiceAt = Date()
             if Date().timeIntervalSince(lastHearingSent) > 0.1 {
                 lastHearingSent = Date()
