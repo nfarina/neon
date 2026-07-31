@@ -42,6 +42,7 @@
   <div><b>E</b> cycle engine</div>
   <div><b>T</b> ghost mode</div>
   <div><b>P</b> preview states</div>
+  <div><b>X</b> cycle emotes</div>
   <div><b>Tab</b> hold for this legend</div>
   <div><b>Esc</b> quit</div>
 </div>
@@ -91,6 +92,9 @@ const S = {
   gy:    ch(0.24),
   lum:   ch(0.35),  // brightness: dim asleep, bright awake
   think: ch(0),     // 0..1 blend of the thinking look
+  winkL: ch(1),     // per-eye open multipliers (1 = follow the pair)
+  winkR: ch(1),
+  hueX:  ch(0),     // hue offset from cyan (love goes pink)
 };
 
 // scheduled one-shot tasks, driven by the frame clock
@@ -133,6 +137,7 @@ function wake() {
   cancelTasks();
   state = "waking";
   wakeStartedAt = now;
+  clearEmote();         // cancelTasks may have orphaned a mid-emote restore
   to(S.blink, 1, 0.1);  // heal a blink orphaned mid-close by cancelTasks
   to(S.gx, 0, 0.18); to(S.gy, 0, 0.18);
   to(S.lum, 1, 0.35);
@@ -169,6 +174,63 @@ function saccadeLoop() {
 // The thinking look itself is continuous (scan + pulse), driven by S.think
 // in draw(); no scheduled glances needed.
 
+// ============================================================ emotes
+// Short one-shot expressions the model triggers via its emote tool.
+function clearEmote() {
+  to(S.winkL, 1, 0.2); to(S.winkR, 1, 0.2); to(S.hueX, 0, 0.3);
+}
+const EMOTES = {
+  happy() {
+    to(S.open, 0.5, 0.22, easeOutCubic); to(S.lum, 1.05, 0.2);
+    after(1.5, () => { to(S.open, 1, 0.35); to(S.lum, 1, 0.4); });
+  },
+  laugh() {
+    to(S.open, 0.45, 0.18); to(S.lum, 1.1, 0.15);
+    for (let i = 0; i < 4; i++) {
+      after(0.18 + i * 0.26, () => {
+        to(S.gy, -0.14, 0.11);
+        after(0.13, () => to(S.gy, 0.1, 0.11));
+      });
+    }
+    after(1.6, () => { to(S.open, 1, 0.3); to(S.lum, 1, 0.35); to(S.gy, 0, 0.3); });
+  },
+  surprised() {
+    to(S.open, 1.22, 0.1, easeOutBack); to(S.lum, 1.15, 0.1); glanceTo(0, -0.05);
+    after(1.4, () => { to(S.open, 1, 0.3); to(S.lum, 1, 0.4); });
+  },
+  wink() {
+    to(S.winkR, 0.02, 0.12, easeInCubic);
+    after(0.5, () => to(S.winkR, 1, 0.22, easeOutCubic));
+  },
+  sad() {
+    to(S.open, 0.55, 0.7); to(S.gy, 0.35, 0.8); to(S.lum, 0.55, 0.9);
+    after(2.4, () => { to(S.open, 1, 0.5); to(S.gy, 0, 0.5); to(S.lum, 1, 0.6); });
+  },
+  confused() {
+    to(S.winkL, 0.5, 0.25); to(S.gx, 0.28, 0.3); to(S.gy, -0.1, 0.3);
+    after(1.8, () => { to(S.winkL, 1, 0.25); glanceTo(0, 0); });
+  },
+  eyeroll() {
+    glanceTo(0.4, -0.1);
+    after(0.25, () => glanceTo(0.25, -0.45));
+    after(0.5, () => glanceTo(-0.2, -0.5));
+    after(0.8, () => glanceTo(-0.35, -0.1));
+    after(1.15, () => glanceTo(0, 0));
+  },
+  excited() {
+    to(S.lum, 1.15, 0.12);
+    to(S.open, 1.2, 0.12, easeOutBack);
+    after(0.25, () => to(S.open, 0.95, 0.12));
+    after(0.5, () => to(S.open, 1.18, 0.12, easeOutBack));
+    after(0.78, () => to(S.open, 1, 0.15));
+    after(1.3, () => to(S.lum, 1, 0.4));
+  },
+  love() {
+    to(S.hueX, 139, 0.35); to(S.lum, 1.1, 0.3); to(S.open, 0.75, 0.35);
+    after(2.2, () => { to(S.hueX, 0, 0.6); to(S.lum, 1, 0.5); to(S.open, 1, 0.4); });
+  },
+};
+
 function blinkLoop() {
   if (state !== "awake") return;
   after(rand(2.2, 6.0), () => {
@@ -182,6 +244,7 @@ function blinkLoop() {
 function drowse() {
   cancelTasks();
   state = "drowsy";
+  clearEmote();
   to(S.blink, 1, 0.1);
   to(S.open, 0.5, 1.3, easeInOutCubic);
   to(S.gy, 0.28, 1.5); to(S.gx, 0, 1.0);
@@ -213,6 +276,7 @@ function sleepTwitchLoop() {
 function sleep() {
   cancelTasks();
   state = "sleeping";
+  clearEmote();
   to(S.blink, 1, 0.1);
   to(S.open, 0.07, 0.9, easeInCubic);
   to(S.gx, 0, 0.9); to(S.gy, 0.24, 0.9);
@@ -299,7 +363,8 @@ function draw() {
     const cx = W / 2 + dir * sep / 2 + gx * gazePx;
     const cy = H / 2 + gy * gazePx * 0.8 + bobY;
 
-    let h = eyeH * Math.min(openEff, 1.18) * (1 + speakAmp * 0.05 + hearAmp * 0.06 * awakeGate);
+    const wink = dir < 0 ? S.winkL.v : S.winkR.v;
+    let h = eyeH * Math.min(openEff * wink, 1.18) * (1 + speakAmp * 0.05 + hearAmp * 0.06 * awakeGate);
     // slight sympathetic widening as lids close (squash & stretch)
     let w = eyeW * (1 + (1 - Math.min(openEff, 1)) * 0.10);
     // lids close mostly from the top: bias the visible slit downward
@@ -307,7 +372,7 @@ function draw() {
     const x = cx - w / 2;
     const r = Math.min(w * 0.42, h / 2);
 
-    const hue = 191 + 28 * th;  // drift toward indigo while reasoning
+    const hue = 191 + 28 * th + S.hueX.v;  // indigo while reasoning; pink for love
     const topL = 40 + 32 * lum;
     const botL = 30 + 24 * lum;
     const grad = ctx.createLinearGradient(0, y, 0, y + h);
@@ -389,6 +454,12 @@ window.neon = {
     document.body.style.background = on ? "transparent" : "";
   },
   legend(show) { document.getElementById("legend").style.display = show ? "block" : "none"; },
+  emote(name) {
+    const fn = EMOTES[name];
+    if (!fn) return;
+    if (state !== "awake" && state !== "waking") wake();
+    fn();
+  },
   thinking(on) {
     on = !!on;
     if (on === thinking) return;
@@ -404,10 +475,20 @@ window.neon = {
   get state() { return state; },
 };
 window.neon.previewNext = previewNext;
+// X cycles through the emotes (badge names each) — for eyeballing them.
+let emoteIx = -1;
+function emoteNext() {
+  const names = Object.keys(EMOTES);
+  emoteIx = (emoteIx + 1) % names.length;
+  badge(`emote: ${names[emoteIx]}`);
+  window.neon.emote(names[emoteIx]);
+}
+window.neon.emoteNext = emoteNext;
 addEventListener("keydown", e => {
   if (e.key === " " || e.key === "w") wake();
   if (e.key === "s") sleep();
   if (e.key === "p") previewNext();
+  if (e.key === "x") emoteNext();
 });
 </script>
 </body>

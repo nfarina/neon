@@ -21,7 +21,7 @@ enum VoiceEvent {
     case outputText(String)
     case interrupted
     case usage(VoiceUsage, cumulative: Bool)  // cumulative: replaces prior totals
-    case toolCall(name: String, id: String?)  // function name + provider call id
+    case toolCall(name: String, id: String?, args: [String: Any])
     case thinking                             // a thought part arrived; model is reasoning
 }
 
@@ -39,6 +39,13 @@ let captureToolDescription = """
     Capture a fresh snapshot from your camera so you can see the kitchen \
     right now. Call this whenever looking would help — what someone is \
     holding, what's cooking, who's there.
+    """
+let emoteToolName = "emote"
+let emoteEmotions = ["happy", "laugh", "surprised", "wink", "sad",
+                     "confused", "eyeroll", "excited", "love"]
+let emoteToolDescription = """
+    Show a feeling with your eyes — they animate the emotion on screen. \
+    Use this often, whenever it fits what you're saying or reacting to.
     """
 
 protocol VoiceEngine {
@@ -112,6 +119,12 @@ struct GeminiEngine: VoiceEngine {
                     ["functionDeclarations": [
                         ["name": sleepToolName, "description": sleepToolDescription],
                         ["name": captureToolName, "description": captureToolDescription],
+                        ["name": emoteToolName, "description": emoteToolDescription,
+                         "parameters": [
+                            "type": "OBJECT",
+                            "properties": ["emotion": ["type": "STRING", "enum": emoteEmotions]],
+                            "required": ["emotion"],
+                         ]],
                     ]],
                 ],
             ],
@@ -148,7 +161,8 @@ struct GeminiEngine: VoiceEngine {
            let calls = tc["functionCalls"] as? [[String: Any]] {
             for call in calls {
                 if let name = call["name"] as? String {
-                    events.append(.toolCall(name: name, id: call["id"] as? String))
+                    events.append(.toolCall(name: name, id: call["id"] as? String,
+                                            args: call["args"] as? [String: Any] ?? [:]))
                 }
             }
         }
@@ -273,7 +287,10 @@ struct OpenAIEngine: VoiceEngine {
             if let item = msg["item"] as? [String: Any],
                item["type"] as? String == "function_call",
                let name = item["name"] as? String {
-                return [.toolCall(name: name, id: item["call_id"] as? String)]
+                let args = (item["arguments"] as? String)
+                    .flatMap { $0.data(using: .utf8) }
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+                return [.toolCall(name: name, id: item["call_id"] as? String, args: args ?? [:])]
             }
         case "response.done":
             if let resp = msg["response"] as? [String: Any],

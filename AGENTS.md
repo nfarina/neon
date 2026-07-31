@@ -338,6 +338,16 @@ Work toward Neon's spoken conversation lives under `voice/`.
 - Personality lives in the VoiceSession system prompt: bright, playful,
   opinionated, light banter — but never sycophantic or theatrical, no
   catchphrases (and still no Valorant).
+- Household facts (names, ages, interests) live OUTSIDE the repo in
+  `~/.config/neon/profile.md`, loaded into the system prompt each session —
+  edit that file to teach her about people; keep personal data out of git.
+- The `emote` tool animates feelings in the eyes: happy, laugh, surprised,
+  wink, sad, confused, eyeroll, excited, love (pink hue shift). Declared
+  with an enum parameter (schema validated by probe; args arrive in
+  `toolCall.functionCalls[].args`). Per-eye wink channels (S.winkL/R) and a
+  hue-offset channel (S.hueX) back it; wake/drowse/sleep call clearEmote()
+  so a cancelled mid-emote can't strand a closed eye. The prompt encourages
+  frequent, unannounced use. X key cycles all emotes with the badge.
 - Short-term memory: `ConversationLog` appends each session's transcript
   (from the input/output transcription events) to
   `~/.config/neon/conversations.md`, capped at 30k chars; the last ~2.5k

@@ -66,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 35:  // p — cycle state previews (awake/hearing/thinking/speaking)
                 self?.webView.evaluateJavaScript("window.neon && neon.previewNext()")
                 return nil
+            case 7:   // x — cycle emote animations
+                self?.webView.evaluateJavaScript("window.neon && neon.emoteNext()")
+                return nil
             case 48:  // tab (hold) — keyboard shortcut legend
                 if !event.isARepeat { self?.showLegend(true) }
                 return nil
@@ -186,6 +189,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         session.onDoze = { [weak self] dozing in
             self?.webView.evaluateJavaScript("window.neon && neon.\(dozing ? "doze" : "wake")()")
+        }
+        session.onEmote = { [weak self] emotion in
+            let safe = emotion.filter { $0.isLetter }
+            self?.webView.evaluateJavaScript("window.neon && neon.emote('\(safe)')")
         }
         session.onClosed = { [weak self] reason in
             guard let self else { return }

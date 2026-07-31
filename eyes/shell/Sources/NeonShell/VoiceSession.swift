@@ -12,6 +12,8 @@ final class VoiceSession: NSObject {
     /// Fires true when idle silence begins the doze animation (session still
     /// open as a grace window) and false if the speaker resumes mid-doze.
     var onDoze: (Bool) -> Void = { _ in }
+    /// The model called emote — animate the named feeling in the eyes.
+    var onEmote: (String) -> Void = { _ in }
     /// Called once when the session ends; reason "tool" means the model put
     /// itself to sleep and the eyes should close immediately.
     var onClosed: (String) -> Void = { _ in }
@@ -31,6 +33,11 @@ final class VoiceSession: NSObject {
 
         You have a camera: call \(captureToolName) whenever seeing would \
         help — what someone's holding, what's on the stove, who walked in.
+
+        Your eyes are expressive: call \(emoteToolName) often — a wink after \
+        a joke, surprise at big news, laugh when something's funny, love \
+        when someone's sweet. Don't announce it or mention the tool; just \
+        let your eyes react while you talk.
 
         You hear everything near the microphone, including people talking to \
         each other rather than to you. If speech clearly isn't directed at \
@@ -112,6 +119,13 @@ final class VoiceSession: NSObject {
         task.resume()
         receiveLoop()
         var system = Self.system
+        // Household facts live outside the repo (~/.config/neon/profile.md).
+        let profilePath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/neon/profile.md")
+        if let profile = try? String(contentsOf: profilePath, encoding: .utf8),
+           !profile.isEmpty {
+            system += "\n\nAbout the people you live with (from Nick):\n\(profile)"
+        }
         if let recent = ConversationLog.shared.recentContext() {
             system += """
 
@@ -277,10 +291,17 @@ final class VoiceSession: NSObject {
                 } else {
                     record("Neon", t)
                 }
-            case .toolCall(let name, let id):
-                NSLog("Neon voice: tool call: \(name)")
+            case .toolCall(let name, let id, let args):
+                NSLog("Neon voice: tool call: \(name) \(args)")
                 if name == sleepToolName { requestSleep() }
                 else if name == captureToolName { handleCapture(id: id) }
+                else if name == emoteToolName {
+                    let emotion = (args["emotion"] as? String) ?? "happy"
+                    onEmote(emotion)
+                    if let resp = engine.toolResponseMessage(id: id, name: name, result: "done") {
+                        sendJSON(resp)
+                    }
+                }
             case .interrupted:
                 AudioHub.shared.player.stop()
                 pendingPlaybacks = 0
