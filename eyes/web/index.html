@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Neo</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #04060a; overflow: hidden; cursor: none; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+
+// ============================================================ setup
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+}
+addEventListener("resize", resize);
+resize();
+
+// ============================================================ easing
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rand = (a, b) => a + Math.random() * (b - a);
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+const easeInCubic  = t => t * t * t;
+const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOutQuint = t => 1 - Math.pow(1 - t, 5);
+const easeOutBack = t => { const c = 2.0; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+
+// ============================================================ animation channels
+// A channel is a value that tweens toward a target. All timing in seconds.
+let now = 0;
+function ch(v) { return { v, from: v, to: v, t0: 0, dur: 0, ease: easeInOutCubic }; }
+function to(c, target, dur, ease) {
+  c.from = c.v; c.to = target; c.t0 = now; c.dur = dur; c.ease = ease || easeInOutCubic;
+}
+function tickCh(c) {
+  if (c.dur <= 0) { c.v = c.to; return; }
+  const t = clamp((now - c.t0) / c.dur, 0, 1);
+  c.v = c.from + (c.to - c.from) * c.ease(t);
+  if (t >= 1) c.dur = 0;
+}
+
+const S = {
+  open:  ch(0.07),  // 0 closed .. 1 open (may overshoot slightly)
+  blink: ch(1),     // multiplier for blinks, 1 = eyes as open as `open` allows
+  gx:    ch(0),     // gaze -1..1
+  gy:    ch(0.24),
+  lum:   ch(0.35),  // brightness: dim asleep, bright awake
+};
+
+// scheduled one-shot tasks, driven by the frame clock
+let tasks = [];
+function after(d, fn) { tasks.push({ at: now + d, fn }); }
+function cancelTasks() { tasks = []; }
+function runTasks() {
+  const due = tasks.filter(t => now >= t.at);
+  tasks = tasks.filter(t => now < t.at);
+  for (const t of due) t.fn();
+}
+
+// ============================================================ behaviors
+const AWAKE_SECS = 8;
+let state = "asleep";
+let awakeUntil = 0;
+
+function blinkOnce(cb) {
+  to(S.blink, 0, 0.07, easeInCubic);
+  after(0.07, () => {
+    to(S.blink, 1, 0.13, easeOutCubic);
+    if (cb) after(0.13, cb);
+  });
+}
+
+function glanceTo(x, y) {
+  to(S.gx, x, 0.09, easeOutQuint);
+  to(S.gy, y, 0.09, easeOutQuint);
+}
+
+function wake() {
+  if (state === "awake") { awakeUntil = now + AWAKE_SECS; return; }
+  cancelTasks();
+  state = "waking";
+  to(S.gx, 0, 0.18); to(S.gy, 0, 0.18);
+  to(S.lum, 1, 0.35);
+  to(S.open, 1.14, 0.16, easeOutBack);            // snap open with overshoot
+  after(0.18, () => to(S.open, 1, 0.12, easeOutCubic)); // settle
+  after(0.5, () => blinkOnce());                   // settling blink
+  after(0.85, () => glanceTo(-0.35, -0.06));       // look around, curious
+  after(1.35, () => glanceTo(0.35, -0.02));
+  after(1.85, () => {
+    state = "awake";
+    awakeUntil = now + AWAKE_SECS;
+    saccadeLoop();
+    blinkLoop();
+  });
+}
+
+function saccadeLoop() {
+  if (state !== "awake") return;
+  after(rand(0.6, 2.4), () => {
+    if (state !== "awake") return;
+    glanceTo(rand(-0.45, 0.45), rand(-0.22, 0.28));
+    saccadeLoop();
+  });
+}
+
+function blinkLoop() {
+  if (state !== "awake") return;
+  after(rand(2.2, 6.0), () => {
+    if (state !== "awake") return;
+    blinkOnce();
+    if (Math.random() < 0.15) after(0.3, () => blinkOnce()); // occasional double blink
+    blinkLoop();
+  });
+}
+
+function drowse() {
+  cancelTasks();
+  state = "drowsy";
+  to(S.open, 0.5, 1.3, easeInOutCubic);
+  to(S.gy, 0.28, 1.5); to(S.gx, 0, 1.0);
+  to(S.lum, 0.6, 1.5);
+  after(1.7, () => { // one slow heavy blink
+    to(S.blink, 0, 0.3, easeInCubic);
+    after(0.35, () => to(S.blink, 1, 0.45, easeOutCubic));
+  });
+  after(3.0, () => {
+    state = "sleeping";
+    to(S.open, 0.07, 1.5, easeInCubic);
+    to(S.gy, 0.24, 1.5);
+    to(S.lum, 0.35, 1.6);
+    after(1.6, () => { state = "asleep"; sleepTwitchLoop(); });
+  });
+}
+
+function sleepTwitchLoop() {
+  if (state !== "asleep") return;
+  after(rand(8, 18), () => {
+    if (state !== "asleep") return;
+    // a tiny stir: eyes shift under the lids
+    to(S.gx, rand(-0.08, 0.08), 0.5);
+    after(0.7, () => to(S.gx, 0, 0.9));
+    sleepTwitchLoop();
+  });
+}
+
+function sleep() {
+  cancelTasks();
+  state = "sleeping";
+  to(S.open, 0.07, 0.9, easeInCubic);
+  to(S.gx, 0, 0.9); to(S.gy, 0.24, 0.9);
+  to(S.lum, 0.35, 1.0);
+  after(1.0, () => { state = "asleep"; sleepTwitchLoop(); });
+}
+
+sleepTwitchLoop(); // start life in asleep state
+
+// ============================================================ render
+function draw() {
+  const t = now;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  // background with a soft vignette
+  ctx.fillStyle = "#04060a";
+  ctx.fillRect(0, 0, W, H);
+  const vg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+  vg.addColorStop(0, "rgba(16,24,32,0.55)");
+  vg.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+
+  const B = Math.min(W, H);          // base scale
+  const eyeW = B * 0.20, eyeH = B * 0.26;
+  const sep = B * 0.34;              // distance between eye centers
+  const gazePx = B * 0.045;
+  const lum = S.lum.v;
+
+  // breathing & idle bob
+  const asleepish = 1 - clamp(S.open.v, 0, 1);
+  const breathe = Math.sin(t * (Math.PI * 2) / 4.2);
+  const bobY = breathe * B * 0.008 * asleepish + Math.sin(t * 1.9) * B * 0.0035;
+  const breatheOpen = breathe * 0.014 * asleepish;
+
+  // fixation micro-drift, only meaningful while fairly awake
+  const awakeness = clamp(S.open.v, 0, 1);
+  const driftX = (Math.sin(t * 1.7) + Math.sin(t * 2.9) * 0.5) * 0.008 * awakeness;
+  const driftY = (Math.sin(t * 1.3) + Math.sin(t * 2.3) * 0.5) * 0.006 * awakeness;
+
+  const openEff = clamp(S.open.v * S.blink.v + breatheOpen, 0.035, 1.18);
+  const gx = S.gx.v + driftX, gy = S.gy.v + driftY;
+
+  for (const dir of [-1, 1]) {
+    const cx = W / 2 + dir * sep / 2 + gx * gazePx;
+    const cy = H / 2 + gy * gazePx * 0.8 + bobY;
+
+    let h = eyeH * Math.min(openEff, 1.18);
+    // slight sympathetic widening as lids close (squash & stretch)
+    let w = eyeW * (1 + (1 - Math.min(openEff, 1)) * 0.10);
+    // lids close mostly from the top: bias the visible slit downward
+    const y = cy - h / 2 + (eyeH - Math.min(h, eyeH)) * 0.28;
+    const x = cx - w / 2;
+    const r = Math.min(w * 0.42, h / 2);
+
+    const hue = 191;
+    const topL = 40 + 32 * lum;
+    const botL = 30 + 24 * lum;
+    const grad = ctx.createLinearGradient(0, y, 0, y + h);
+    grad.addColorStop(0, `hsl(${hue} 92% ${topL}%)`);
+    grad.addColorStop(1, `hsl(${hue + 6} 96% ${botL}%)`);
+
+    // wide soft bloom pass
+    ctx.save();
+    ctx.shadowColor = `hsla(${hue}, 100%, 60%, ${0.35 + 0.3 * lum})`;
+    ctx.shadowBlur = B * 0.10 * (0.4 + 0.6 * lum);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+    ctx.restore();
+
+    // tight glow pass
+    ctx.save();
+    ctx.shadowColor = `hsla(${hue}, 100%, 70%, ${0.5 + 0.4 * lum})`;
+    ctx.shadowBlur = B * 0.030;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ============================================================ main loop
+function frame(ms) {
+  now = ms / 1000;
+  runTasks();
+  for (const k in S) tickCh(S[k]);
+  if (state === "awake" && now > awakeUntil) drowse();
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ============================================================ external API
+window.neo = {
+  wake, sleep,
+  get state() { return state; },
+};
+addEventListener("keydown", e => {
+  if (e.key === " " || e.key === "w") wake();
+  if (e.key === "s") sleep();
+});
+</script>
+</body>
+</html>

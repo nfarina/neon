@@ -140,9 +140,36 @@ As of July 30, 2026:
   installed macOS 15.4 SDK with a macOS 15 deployment target.
 - Nick's MacBook Air can be mounted through Finder's Network view for small,
   selective file transfers.
-- This directory contains project context and the `allow-chrome-mcp` utility,
-  but no ambient-assistant implementation yet.
 - This directory is a Git repository on the `main` branch.
+
+## Eyes Proof of Concept
+
+The first ambient-assistant implementation exists under `eyes/`:
+
+- `eyes/web/index.html` — the eyes themselves: a single self-contained HTML
+  canvas page. State machine: asleep (glowing slits, breathing sway, rare
+  twitches) → waking (overshoot snap-open, settling blink, curious glances) →
+  awake (randomized saccades and blinks for ~8 s) → drowsy → asleep.
+  `window.neo.wake()` / `window.neo.sleep()` are the external API; Space/W
+  wakes and S sleeps when the page has focus.
+- `eyes/shell/` — SwiftPM package (`swift build`, no Xcode) providing the
+  kiosk shell: borderless fullscreen NSWindow above the menu bar hosting a
+  WKWebView that renders the page. Esc quits, W forces a wake.
+- `eyes/shell/Sources/NeoShell/WakeWordListener.swift` — wake-word detection
+  by continuous on-device `SFSpeechRecognizer` transcription, fuzzy-matched
+  for "hey neo" and common mis-hearings. Sessions restart on errors, wake
+  triggers, and a 45 s rollover. Deliberately the simplest thing that works;
+  if accuracy disappoints, replace this one class with a real wake-word engine
+  (e.g. Picovoice Porcupine — requires a free account) — the only contract is
+  the `onWake` closure.
+- `eyes/shell/build.sh` — builds and assembles `eyes/Neo.app` by hand
+  (Info.plist with mic/speech usage strings, ad-hoc codesign). Run with
+  `open eyes/Neo.app`; first launch prompts for Microphone and Speech
+  Recognition.
+- Rationale for the hybrid: the web page is where animation iteration happens
+  (openable in plain Chrome, screenshotable via the Chrome DevTools MCP); the
+  native shell owns the screen, the mic, and eventually the whole voice
+  pipeline (STT/TTS).
 
 ## Current Decisions
 
