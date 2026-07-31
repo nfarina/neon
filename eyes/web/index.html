@@ -88,6 +88,7 @@ function wake() {
   if (state === "awake") { awakeUntil = now + AWAKE_SECS; return; }
   cancelTasks();
   state = "waking";
+  to(S.blink, 1, 0.1);  // heal a blink orphaned mid-close by cancelTasks
   to(S.gx, 0, 0.18); to(S.gy, 0, 0.18);
   to(S.lum, 1, 0.35);
   to(S.open, 1.14, 0.16, easeOutBack);            // snap open with overshoot
@@ -125,6 +126,7 @@ function blinkLoop() {
 function drowse() {
   cancelTasks();
   state = "drowsy";
+  to(S.blink, 1, 0.1);
   to(S.open, 0.5, 1.3, easeInOutCubic);
   to(S.gy, 0.28, 1.5); to(S.gx, 0, 1.0);
   to(S.lum, 0.6, 1.5);
@@ -155,6 +157,7 @@ function sleepTwitchLoop() {
 function sleep() {
   cancelTasks();
   state = "sleeping";
+  to(S.blink, 1, 0.1);
   to(S.open, 0.07, 0.9, easeInCubic);
   to(S.gx, 0, 0.9); to(S.gy, 0.24, 0.9);
   to(S.lum, 0.35, 1.0);
