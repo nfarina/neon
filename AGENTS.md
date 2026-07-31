@@ -163,6 +163,16 @@ Work toward Neon's spoken conversation lives under `voice/`.
 - Neon's first spoken words (native-audio-latest, July 31, 2026): "Zap!
   Just testing the speakers, Nick. I'm Neon, your new AI assistant. Let's
   get things done, fast!"
+- Persona rule: the Valorant naming is a silent partner — an inside joke in
+  the project, never part of the assistant's character. System prompts must
+  not mention Valorant or push an "electric" persona; Neon should sound
+  warm, quick, and natural, with no catchphrases. (The first-words "Zap!"
+  came from a prompt that mentioned the namesake; that mention was removed.)
+- Audio architecture decision: the Swift shell owns all audio (mic capture,
+  playback, and later the camera); the web page is a pure renderer driven
+  over the JS bridge (`neon.wake()`, later `neon.speaking(amplitude)`).
+  One native audio graph avoids the wake-word listener and voice session
+  fighting over the mic and keeps echo cancellation in AVFoundation.
 - Next step: a Swift `VoiceSession` in the shell streaming mic audio to
   Gemini Live and playing replies, opened on wake word, with the eyes
   reacting to session state; then camera frames.
