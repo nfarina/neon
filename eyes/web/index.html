@@ -335,27 +335,8 @@ function draw() {
     ctx.restore();
   }
 
-  // Listening indicator: a cyan glow border inset around the screen edge,
-  // its spread and brightness following the speaker's voice level. Only
-  // while a session is live (hold) — it means "Neon is hearing this",
-  // not merely "the wake listener noticed sound".
-  const hearGate = hearAmp * clamp(S.open.v, 0, 1)
-    * (hold || preview === "hearing" ? 1 : 0);
-  if (hearGate > 0.02) {
-    ctx.save();
-    ctx.lineWidth = B * 0.006;
-    ctx.strokeStyle = `hsla(191, 100%, 72%, ${0.08 + 0.30 * hearGate})`;
-    ctx.shadowColor = `hsla(191, 100%, 65%, ${0.45 + 0.45 * hearGate})`;
-    ctx.shadowBlur = B * (0.012 + 0.085 * hearGate);
-    ctx.beginPath();
-    ctx.roundRect(1, 1, W - 2, H - 2, B * 0.03);
-    ctx.stroke();
-    // second, tighter pass brightens the rim itself
-    ctx.shadowBlur = B * 0.01;
-    ctx.strokeStyle = `hsla(191, 100%, 82%, ${0.12 + 0.35 * hearGate})`;
-    ctx.stroke();
-    ctx.restore();
-  }
+  // (A screen-edge "hearing" glow lived here briefly; retired — recognizer
+  // partials lag speech too much for it to feel live. Open eyes = listening.)
 }
 
 // ============================================================ main loop
