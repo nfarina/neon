@@ -17,6 +17,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var providerName = ProcessInfo.processInfo.environment["NEON_PROVIDER"]
         ?? UserDefaults.standard.string(forKey: "neon.voiceProvider") ?? "gemini"
 
+    /// Once a trained Neon wake model exists in ~/.config/neon/oww/, the
+    /// openWakeWord path owns waking (it opens the session mid-phrase, so
+    /// connect overlaps speech). SFSpeech then only feeds transcripts, the
+    /// overlay, and voice-activity — NEON_SFWAKE=1 re-arms it for debugging.
+    private let sfSpeechWakes: Bool = {
+        if ProcessInfo.processInfo.environment["NEON_SFWAKE"] == "1" { return true }
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/neon/oww")
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        let hasNeonModel = files.contains {
+            $0.hasSuffix(".onnx") && $0.lowercased().contains("neon")
+        }
+        return !hasNeonModel
+    }()
+
     func applicationDidFinishLaunching(_ note: Notification) {
         guard let screen = NSScreen.main else { fatalError("no screen") }
 
@@ -78,9 +93,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        NSLog("Neon: SFSpeech wake triggers \(sfSpeechWakes ? "armed" : "off (custom wake model owns waking)")")
         let listener = WakeWordListener()
         listener.onWake = { [weak self] command, prelude in
-            self?.triggerWake(command: command, prelude: prelude)
+            guard let self, self.sfSpeechWakes else { return }
+            self.triggerWake(command: command, prelude: prelude)
         }
         listener.onNameHeard = { [weak self] in
             // Pre-wake: eyes open and listen while the speaker finishes.

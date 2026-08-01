@@ -418,10 +418,18 @@ Work toward Neon's spoken conversation lives under `voice/`.
   "Hey there John". On detection the session opens with ring audio from
   2 s before the phrase (`preludeFrom`), so the model hears the summons
   and whatever follows, with no gap during connect.
+- The wake-path handoff is automatic: when any .onnx whose name contains
+  "neon" appears in ~/.config/neon/oww/, SFSpeech stops triggering wakes
+  (NEON_SFWAKE=1 re-arms it for debugging) and openWakeWord owns waking.
+  SFSpeech keeps running regardless for transcripts, the overlay, voice
+  activity, and the pre-wake eye cue. First-turn latency largely solves
+  itself in this architecture: detection fires at the end of the phrase,
+  so connect+setup overlaps the speaker's question instead of following
+  the 0.85 s trailing-silence wait (the SFSpeech path's serial chain was
+  ~2-2.7 s after last word vs ~1-1.5 s on warm turns).
 - Next: train "Hey Neon" (Colab, then drop hey_neon.onnx into
-  ~/.config/neon/oww/); more tools; Claude Code handoff for long tasks;
-  long-term memory; retire the SFSpeech wake path once the custom model
-  proves out (it stays as transcript/overlay/voice-activity source).
+  ~/.config/neon/oww/ — the handoff is automatic); more tools; Claude
+  Code handoff for long tasks; long-term memory.
 
 ## Eyes Proof of Concept
 
