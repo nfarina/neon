@@ -35,12 +35,23 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 
-# Sign with the stable "Neon Dev" certificate so TCC grants survive rebuilds;
-# ad-hoc signing resets microphone permission on every build.
-if security find-identity -v -p codesigning | grep -q "Neon Dev"; then
-  codesign --force --sign "Neon Dev" "$APP"
+# Sign with a stable identity so TCC grants survive rebuilds; ad-hoc signing
+# gives each build a new identity, so macOS resets microphone permission every
+# time. "Neon Dev" is the self-signed cert on the kitchen Mac; a machine signed
+# into Xcode has an Apple Development cert, which is equally stable and needs
+# no setup, so prefer that over falling back to ad-hoc.
+IDENTITIES=$(security find-identity -v -p codesigning)
+if grep -q "Neon Dev" <<< "$IDENTITIES"; then
+  SIGN_ID="Neon Dev"
+elif grep -q "Apple Development" <<< "$IDENTITIES"; then
+  SIGN_ID=$(grep -o '"Apple Development: [^"]*"' <<< "$IDENTITIES" | head -1 | tr -d '"')
+fi
+
+if [[ -n "${SIGN_ID:-}" ]]; then
+  codesign --force --sign "$SIGN_ID" "$APP"
+  echo "Signed with: $SIGN_ID"
 else
-  echo "warning: 'Neon Dev' identity not found; ad-hoc signing (mic permission will reset)" >&2
+  echo "warning: no stable signing identity ('Neon Dev' or Apple Development); ad-hoc signing (mic permission will reset)" >&2
   codesign --force --sign - "$APP"
 fi
 echo "Built $APP"

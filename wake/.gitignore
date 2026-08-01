@@ -1,0 +1,5 @@
+# Training inputs and intermediates — large and fully reproducible from the
+# pipeline. Only wake/models/ ships. See README.md.
+data/
+output/
+logs/

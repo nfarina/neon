@@ -193,8 +193,29 @@ Work toward Neon's spoken conversation lives under `voice/`.
   keychain; generated files in `~/.config/neon/codesign*`). This matters:
   ad-hoc signing gives each build a new identity, so macOS silently resets
   the Microphone TCC grant on every rebuild and the wake listener hangs
-  forever awaiting an invisible permission callback. `build.sh` uses the
-  certificate and falls back to ad-hoc with a warning.
+  forever awaiting an invisible permission callback. `build.sh` prefers
+  "Neon Dev", then any Apple Development identity (a machine signed into
+  Xcode already has one, and it is just as stable — no cert to generate or
+  trust), and only then falls back to ad-hoc with a warning.
+- The wake-model training pipeline lives in `wake/` (moved into the repo
+  August 1, 2026, from `~/Downloads/hey-neon`): an Apple Container
+  (linux/arm64, CPU-only) port of openWakeWord's `automatic_model_training`
+  notebook, plus `wake/models/hey_neon.onnx` — the v1 weights Neon actually
+  loads. `wake/README.md` documents the stages and, importantly, four
+  upstream bugs this pipeline works around (arm64 dependency swaps, the wrong
+  piper-sample-generator fork, `augmentation_rounds` being a silent no-op, and
+  the built-in TFLite conversion always failing) so they are not rediscovered.
+  `data/`, `output/`, and `logs/` are gitignored — ~19 GB of corpora, clips,
+  and features, all reproducible.
+- Setting up a second machine (August 1, 2026) surfaced what a fresh clone
+  does not get. `~/.config/neon/` holds `secrets.env` and `profile.md`, which
+  correctly stay out of git, and `oww/`, which was only ever a copy — the
+  models are now in `wake/models/`, so the remaining step is copying them plus
+  openWakeWord's two shared feature extractors into `~/.config/neon/oww/`.
+  Missing models degrade cleanly: `OpenWakeListener.loadModels()` logs
+  "models missing" and returns false, leaving the SFSpeech wake path armed, so
+  a bare clone still wakes — it just loses openWakeWord's far-field range and
+  better first-turn latency.
 - Wake-word findings from live testing: Apple's recognizer sometimes fuses
   the phrase into one token — observed "Hey Neon" → "Henon" — so the matcher
   accepts merged forms too. `dbg()` breadcrumbs (raw stderr) log every

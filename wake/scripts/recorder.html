@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hey neon — voice capture</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #30363d;
+    --text: #e6edf3; --dim: #8b949e;
+    --accent: #39d3bb; --hot: #f85149; --ok: #3fb950;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#fff; --panel:#f6f8fa; --line:#d0d7de; --text:#1f2328; --dim:#656d76; --accent:#0f9b8a; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--text);
+    font: 15px/1.5 ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+    display: flex; justify-content: center;
+  }
+  main { width: 100%; max-width: 620px; }
+  h1 { font-size: 1.3rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
+  .sub { color: var(--dim); margin: 0 0 1.5rem; font-size: .9rem; }
+
+  .modes { display: flex; gap: .5rem; margin-bottom: 1.25rem; }
+  .modes button {
+    flex: 1; padding: .6rem; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--dim); cursor: pointer; font: inherit;
+  }
+  .modes button[aria-pressed="true"] { border-color: var(--accent); color: var(--text); }
+
+  .stage {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.5rem; text-align: center; margin-bottom: 1rem;
+  }
+  .prompt { font-size: 1.75rem; font-weight: 600; letter-spacing: -.02em; margin: 0 0 .35rem; }
+  .hint { color: var(--dim); font-size: .9rem; min-height: 1.4em; margin: 0 0 1.1rem; }
+
+  .meter { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; margin-bottom: 1.1rem; }
+  .meter i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .05s linear; }
+
+  #go {
+    width: 100%; padding: .95rem; font: 600 1rem/1 inherit; cursor: pointer;
+    border-radius: 10px; border: 1px solid var(--accent);
+    background: var(--accent); color: #04231f;
+  }
+  #go[data-rec="1"] { background: var(--hot); border-color: var(--hot); color: #fff; }
+  #go:disabled { opacity: .5; cursor: default; }
+  kbd { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: .05em .35em; font-size: .85em; }
+
+  .bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: .6rem; font-size: .9rem; }
+  .count b { color: var(--accent); font-size: 1.1rem; }
+  ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+  li { display: flex; align-items: center; gap: .6rem; padding: .45rem .6rem; border: 1px solid var(--line);
+       border-radius: 8px; margin-bottom: .35rem; font-size: .85rem; }
+  li span { flex: 1; color: var(--dim); font-variant-numeric: tabular-nums; }
+  li button { background: none; border: none; color: var(--dim); cursor: pointer; font: inherit; padding: .1rem .3rem; }
+  li button:hover { color: var(--hot); }
+  .done { color: var(--ok); }
+  .err { color: var(--hot); }
+</style>
+</head>
+<body>
+<main>
+  <h1>hey neon — voice capture</h1>
+  <p class="sub">Recordings save straight into the project. Aim for <b>40+</b> positives across varied
+     distance, volume and pace, plus ~15 negatives.</p>
+
+  <div class="modes">
+    <button id="m-pos" aria-pressed="true">Positive — "hey neon"</button>
+    <button id="m-neg" aria-pressed="false">Negative — everything else</button>
+  </div>
+
+  <div class="stage">
+    <p class="prompt" id="prompt">hey neon</p>
+    <p class="hint" id="hint">Press space to record 2 seconds</p>
+    <div class="meter"><i id="level"></i></div>
+    <button id="go">Record <kbd>space</kbd></button>
+  </div>
+
+  <div class="bar">
+    <span class="count"><b id="n">0</b> <span id="kind">positive</span> clips saved</span>
+    <span id="status" class="sub" style="margin:0"></span>
+  </div>
+  <ul id="list"></ul>
+</main>
+
+<script>
+const DUR = 2.0, SR = 16000;
+
+// Cycling guidance so the set covers varied delivery rather than 40 identical reads.
+const POS_HINTS = [
+  "Normal speaking voice, arm's length from the mic",
+  "A bit quieter, like you're not trying hard",
+  "From across the room",
+  "Slightly faster than normal",
+  "Slower, more deliberate",
+  "Turned away from the mic",
+  "Casual, mid-sentence energy",
+  "A little louder than normal",
+];
+// Near-misses matter most: they teach the model where the phrase boundary is.
+const NEG_PROMPTS = [
+  "hey leon", "hey neo", "hey venn", "he owns", "hey", "neon",
+  "hey there", "any on", "hey NEAT-o", "say anything for a few seconds",
+  "read this sentence out loud normally", "hey Siri", "okay Google", "hey Jarvis",
+  "knee on", "hey Nathan",
+];
+
+let mode = "positive", recording = false, ctx, stream, node, chunks = [], srcRate;
+const $ = id => document.getElementById(id);
+
+function setMode(m) {
+  mode = m;
+  $("m-pos").ariaPressed = String(m === "positive");
+  $("m-neg").ariaPressed = String(m === "negative");
+  $("kind").textContent = m;
+  refresh();
+  nextPrompt();
+}
+$("m-pos").onclick = () => setMode("positive");
+$("m-neg").onclick = () => setMode("negative");
+
+let posIdx = 0, negIdx = 0;
+function nextPrompt() {
+  if (mode === "positive") {
+    $("prompt").textContent = "hey neon";
+    $("hint").textContent = POS_HINTS[posIdx++ % POS_HINTS.length];
+  } else {
+    $("prompt").textContent = NEG_PROMPTS[negIdx % NEG_PROMPTS.length];
+    $("hint").textContent = "Say this instead — teaches the model what NOT to fire on";
+    negIdx++;
+  }
+}
+
+async function initAudio() {
+  if (ctx) return;
+  stream = await navigator.mediaDevices.getUserMedia({
+    // Keep the browser's DSP out of it: we want the raw signal, and the
+    // training pipeline applies its own noise/reverb/gain augmentation.
+    audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  });
+  ctx = new AudioContext();
+  srcRate = ctx.sampleRate;
+  const workletSrc = `
+    class Rec extends AudioWorkletProcessor {
+      process(inputs) {
+        const ch = inputs[0][0];
+        if (ch) this.port.postMessage(new Float32Array(ch));
+        return true;
+      }
+    }
+    registerProcessor('rec', Rec);`;
+  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([workletSrc], {type: "text/javascript"})));
+  node = new AudioWorkletNode(ctx, "rec");
+  node.port.onmessage = e => {
+    const buf = e.data;
+    if (recording) chunks.push(buf);
+    let peak = 0;
+    for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]));
+    $("level").style.width = Math.min(100, peak * 140) + "%";
+  };
+  ctx.createMediaStreamSource(stream).connect(node);
+  node.connect(ctx.destination);   // keep the graph pulling; worklet emits silence
+}
+
+async function resample(data, from, to) {
+  if (from === to) return data;
+  const off = new OfflineAudioContext(1, Math.ceil(data.length * to / from), to);
+  const buf = off.createBuffer(1, data.length, from);
+  buf.copyToChannel(data, 0);
+  const s = off.createBufferSource();
+  s.buffer = buf; s.connect(off.destination); s.start();
+  return (await off.startRendering()).getChannelData(0);
+}
+
+function toWav(samples, rate) {
+  const buf = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); str(8, "WAVE");
+  str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+async function record() {
+  if (recording) return;
+  try { await initAudio(); }
+  catch (e) { $("status").innerHTML = '<span class="err">mic blocked: ' + e.message + '</span>'; return; }
+
+  chunks = []; recording = true;
+  $("go").dataset.rec = "1"; $("go").textContent = "● recording";
+  await new Promise(r => setTimeout(r, DUR * 1000));
+  recording = false;
+  $("go").dataset.rec = "0"; $("go").innerHTML = 'Record <kbd>space</kbd>';
+
+  let total = 0; for (const c of chunks) total += c.length;
+  const flat = new Float32Array(total);
+  let off = 0; for (const c of chunks) { flat.set(c, off); off += c.length; }
+
+  let peak = 0; for (let i = 0; i < flat.length; i++) peak = Math.max(peak, Math.abs(flat[i]));
+  if (peak < 0.012) {
+    $("status").innerHTML = '<span class="err">too quiet — not saved</span>';
+    return;
+  }
+
+  const wav = toWav(await resample(flat, srcRate, SR), SR);
+  const fd = new FormData();
+  fd.append("audio", wav, "clip.wav");
+  const res = await fetch(`/upload?kind=${mode}`, { method: "POST", body: fd });
+  const j = await res.json();
+  $("status").innerHTML = `<span class="done">saved ${j.name}</span>`;
+  refresh();
+  nextPrompt();
+}
+
+async function refresh() {
+  const r = await fetch(`/list?kind=${mode}`);
+  const j = await r.json();
+  $("n").textContent = j.files.length;
+  $("list").innerHTML = "";
+  for (const f of j.files.slice().reverse()) {
+    const li = document.createElement("li");
+    const audio = document.createElement("audio");
+    audio.controls = true; audio.preload = "none";
+    audio.src = `/clip?kind=${mode}&name=${encodeURIComponent(f)}`;
+    audio.style.height = "28px";
+    const label = document.createElement("span");
+    label.textContent = f;
+    const del = document.createElement("button");
+    del.textContent = "delete"; del.title = "remove this clip";
+    del.onclick = async () => {
+      await fetch(`/delete?kind=${mode}&name=${encodeURIComponent(f)}`, { method: "POST" });
+      refresh();
+    };
+    li.append(audio, label, del);
+    $("list").append(li);
+  }
+}
+
+$("go").onclick = record;
+addEventListener("keydown", e => {
+  if (e.code === "Space" && !e.repeat && e.target.tagName !== "BUTTON") { e.preventDefault(); record(); }
+});
+setMode("positive");
+</script>
+</body>
+</html>
