@@ -17,22 +17,18 @@ final class VoiceSession: NSObject {
     /// Called once when the session ends; reason "tool" means the model put
     /// itself to sleep and the eyes should close immediately.
     var onClosed: (String) -> Void = { _ in }
+    /// Conversation trace for the event log: (kind, text), where kind is one
+    /// of session/you/neon/tool/think/emote/sleep/error.
+    var onEvent: (String, String) -> Void = { _, _ in }
 
     private static let system = """
         You are Neon, an AI who lives on a MacBook in the kitchen of Nick's \
         family home. Your visual form is a pair of glowing cyan eyes.
 
-        Personality: bright, quick-witted, and a little playful — the kind \
-        of presence that makes the kitchen more fun. You have opinions and \
-        you're happy to share them. Tease gently, celebrate small things, \
-        enjoy a bit of banter, and be genuinely curious about what's going \
-        on around you. Never sycophantic, never theatrical, no catchphrases \
-        — your charm is that you sound natural. This is spoken conversation: \
-        keep replies short, casual, and warm; save the long version for when \
-        someone actually asks for detail.
+        Personality: Samantha from the movie Her.
 
         You have a camera: call \(captureToolName) whenever seeing would \
-        help — what someone's holding, what's on the stove, who walked in.
+        help — what someone's holding, who walked in.
 
         Your eyes are expressive: call \(emoteToolName) often — a wink after \
         a joke, surprise at big news, laugh when something's funny, love \
@@ -45,11 +41,9 @@ final class VoiceSession: NSObject {
         quiet until you're addressed again.
 
         When the conversation ends — the user says goodbye, is clearly done, \
-        or tells you to sleep — say a brief goodbye and then always call \
-        \(sleepToolName) in the same turn. Also call it (without speaking) if \
-        you were woken by mistake and hear only background chatter or noise. \
-        Invoke tools only as real function calls; never say or spell a tool's \
-        name out loud.
+        or tells you to sleep, call \(sleepToolName) in the same turn. Also \
+        call it (without speaking) if you were woken by mistake and hear only \
+        background chatter or noise.
         """
     private static let greeting =
         ProcessInfo.processInfo.environment["NEON_GREETING"]
@@ -115,9 +109,11 @@ final class VoiceSession: NSObject {
     func start() {
         guard let key = Self.loadKey(engine.keyName) else {
             NSLog("Neon voice: \(engine.keyName) not found in ~/.config/neon/secrets.env")
+            trace("error", "\(engine.keyName) missing from secrets.env")
             DispatchQueue.main.async { self.onClosed("no key") }
             return
         }
+        trace("session", "connecting · \(engine.name) \(engine.model)")
         var request = URLRequest(url: engine.url(key: key))
         for (k, v) in engine.headers(key: key) { request.setValue(v, forHTTPHeaderField: k) }
         let task = URLSession.shared.webSocketTask(with: request)
@@ -151,6 +147,7 @@ final class VoiceSession: NSObject {
         guard !closed else { return }
         closed = true
         NSLog("Neon voice: closing (\(reason)) — \(costLine())")
+        trace("session", String(format: "closed · %@ · $%.4f", reason, currentCost()))
         idleTimer?.invalidate()
         sleepTimer?.invalidate()
         dozeTimer?.invalidate()
@@ -188,6 +185,10 @@ final class VoiceSession: NSObject {
     /// quiet or far-away speakers.
     func noteVoiceActivity() {
         lastVoiceAt = Date()
+    }
+
+    private func trace(_ kind: String, _ text: String) {
+        DispatchQueue.main.async { self.onEvent(kind, text) }
     }
 
     private func costLine() -> String {
@@ -251,6 +252,7 @@ final class VoiceSession: NSObject {
             switch event {
             case .ready:
                 NSLog("Neon voice: session ready")
+                trace("session", "ready")
                 if let cmd = firstUtterance { record("Nick", cmd) }
                 let resolvedPrelude = preludeAudio
                     ?? preludeFrom.map { AudioRing.shared.audio(since: $0) }
@@ -262,6 +264,8 @@ final class VoiceSession: NSObject {
                     // mic chunks can't interleave into the past.
                     NSLog("Neon voice: flushing %.1fs wake audio",
                           Double(prelude.count) / 32000.0)
+                    trace("wake", String(format: "flushed %.1fs of wake audio",
+                                         Double(prelude.count) / 32000.0))
                     for start in stride(from: 0, to: prelude.count, by: 32000) {
                         let chunk = prelude.subdata(in: start..<min(start + 32000, prelude.count))
                         sendJSON(engine.audioMessage(chunk.base64EncodedString()))
@@ -279,6 +283,7 @@ final class VoiceSession: NSObject {
             case .thinking:
                 if !thinkingActive {
                     NSLog("Neon voice: thinking…")
+                    trace("think", "thinking…")
                     thinkingActive = true
                     onThinking(true)
                 }
@@ -287,6 +292,7 @@ final class VoiceSession: NSObject {
                 NSLog("Neon voice: heard: \(t)")
                 heard += heard.isEmpty || t.hasPrefix(" ") ? t : " \(t)"
                 record("Nick", t)
+                trace("you", t)
                 bumpIdle()
             case .outputText(let t):
                 NSLog("Neon voice: saying: \(t)")
@@ -295,22 +301,29 @@ final class VoiceSession: NSObject {
                 // of emitting a real toolCall. Treat the leak as the call.
                 if t.contains(sleepToolName) || t.contains("do_call") {
                     NSLog("Neon voice: tool-call leak in speech; treating as \(sleepToolName)")
+                    trace("tool", "spoken tool-call leak → \(sleepToolName)")
                     requestSleep()
                 } else {
                     record("Neon", t)
+                    trace("neon", t)
                 }
             case .toolCall(let name, let id, let args):
                 NSLog("Neon voice: tool call: \(name) \(args)")
-                if name == sleepToolName { requestSleep() }
+                if name == sleepToolName {
+                    trace("tool", "\(name)()")
+                    requestSleep()
+                }
                 else if name == captureToolName { handleCapture(id: id) }
                 else if name == emoteToolName {
                     let emotion = (args["emotion"] as? String) ?? "happy"
+                    trace("emote", emotion)
                     onEmote(emotion)
                     if let resp = engine.toolResponseMessage(id: id, name: name, result: "done") {
                         sendJSON(resp)
                     }
                 }
             case .interrupted:
+                trace("session", "interrupted — playback dropped")
                 AudioHub.shared.player.stop()
                 pendingPlaybacks = 0
                 playbackTailUntil = Date.distantPast
@@ -386,6 +399,7 @@ final class VoiceSession: NSObject {
     private func handleCapture(id: String?) {
         if let frame = latestFrame, let msg = engine.videoMessage(frame) {
             NSLog("Neon voice: capture_image — sending frame (\(frame.count / 1024) KB)")
+            trace("tool", "capture_image → frame sent (\(frame.count / 1024) KB)")
             sendJSON(msg)
             if let resp = engine.toolResponseMessage(
                 id: id, name: captureToolName,
@@ -395,6 +409,7 @@ final class VoiceSession: NSObject {
         } else if let resp = engine.toolResponseMessage(
             id: id, name: captureToolName, result: "Camera unavailable right now.") {
             NSLog("Neon voice: capture_image — no frame available")
+            trace("tool", "capture_image → no frame available")
             sendJSON(resp)
         }
     }
@@ -494,6 +509,7 @@ final class VoiceSession: NSObject {
         guard !dozing, !closed, !sleepRequested else { return }
         dozing = true
         NSLog("Neon voice: dozing (grace window)")
+        trace("sleep", "idle \(Int(Self.idleSeconds))s — dozing (grace window)")
         onDoze(true)
         let started = Date()
         dozeTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
@@ -513,6 +529,7 @@ final class VoiceSession: NSObject {
         dozing = false
         dozeTimer?.invalidate()
         NSLog("Neon voice: doze interrupted — still being spoken to")
+        trace("wake", "doze interrupted — still being spoken to")
         onDoze(false)
     }
 }

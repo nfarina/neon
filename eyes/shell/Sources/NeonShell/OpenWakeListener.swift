@@ -17,6 +17,13 @@ import OnnxRuntimeBindings
 final class OpenWakeListener {
     var onDetect: (String) -> Void = { _ in }  // wake model name
 
+    /// Name of the wake model actually in use, once loaded — surfaced in the
+    /// debug overlay so "which wake path is live?" is answerable at a glance.
+    private(set) var modelName: String?
+    /// Peak score of the most recent detection, and when it fired.
+    private(set) var lastScore: Float = 0
+    private(set) var lastDetectAt: Date?
+
     private let queue = DispatchQueue(label: "neon.oww")
     private var env: ORTEnv?
     private var melModel: ORTSession?
@@ -42,7 +49,20 @@ final class OpenWakeListener {
     private static let warmupScores = 4
     private var lastFire = Date.distantPast
     private var startTimer: Timer?
-    static let threshold: Float = 0.5
+    /// Detection threshold, tunable without a rebuild
+    /// (`NEON_OWW_THRESHOLD=0.5`). 0.35 suits the current hey_neon model,
+    /// whose true positives plateau around 0.92 while negatives sit at
+    /// ~0.001 — the headroom below the peak is free, so the lower bar buys
+    /// range at the far end of the kitchen without inviting false accepts.
+    static let threshold: Float = {
+        ProcessInfo.processInfo.environment["NEON_OWW_THRESHOLD"]
+            .flatMap(Float.init) ?? 0.35
+    }()
+    /// Scores that came close but didn't fire, for tuning from the room.
+    /// Reported at most once a second so a long sentence can't flood the log.
+    var onNearMiss: (Float) -> Void = { _ in }
+    private static let nearMissFloor: Float = 0.15
+    private var lastNearMiss = Date.distantPast
 
     // MARK: - Setup
 
@@ -57,11 +77,17 @@ final class OpenWakeListener {
                                                       includingPropertiesForKeys: nil)
         else { return false }
         let onnx = files.filter { $0.pathExtension == "onnx" }
+        // Any .onnx that isn't a shared feature extractor is a candidate wake
+        // model. A Neon-named model always wins so a leftover trial model
+        // (hey_jarvis) can sit in the directory without silently taking over.
+        let candidates = onnx.filter {
+            !["melspectrogram.onnx", "embedding_model.onnx"].contains($0.lastPathComponent)
+        }.sorted { $0.lastPathComponent < $1.lastPathComponent }
         guard let mel = onnx.first(where: { $0.lastPathComponent == "melspectrogram.onnx" }),
               let embed = onnx.first(where: { $0.lastPathComponent == "embedding_model.onnx" }),
-              let wake = onnx.first(where: {
-                  !["melspectrogram.onnx", "embedding_model.onnx"].contains($0.lastPathComponent)
-              })
+              let wake = candidates.first(where: {
+                  $0.lastPathComponent.lowercased().contains("neon")
+              }) ?? candidates.first
         else {
             dbg("oww: models missing in \(Self.modelDir.path)")
             return false
@@ -73,7 +99,12 @@ final class OpenWakeListener {
             embedModel = try ORTSession(env: env, modelPath: embed.path, sessionOptions: nil)
             wakeModel = try ORTSession(env: env, modelPath: wake.path, sessionOptions: nil)
             wakeName = wake.deletingPathExtension().lastPathComponent
-            dbg("oww: loaded \(wakeName)")
+            let loaded = wakeName
+            DispatchQueue.main.async { self.modelName = loaded }
+            let others = candidates.filter { $0 != wake }
+                .map { $0.deletingPathExtension().lastPathComponent }
+            dbg("oww: loaded \(wakeName) (threshold \(Self.threshold))"
+                + (others.isEmpty ? "" : " (ignoring \(others.joined(separator: ", ")))"))
             return true
         } catch {
             dbg("oww: model load failed: \(error)")
@@ -149,12 +180,20 @@ final class OpenWakeListener {
         while samples.count >= 1280 {
             let chunk = Array(samples.prefix(1280))
             samples.removeFirst(1280)
-            if let score = process(chunk), score > Self.threshold,
-               Date().timeIntervalSince(lastFire) > 2 {
+            guard let score = process(chunk) else { continue }
+            if score > Self.threshold, Date().timeIntervalSince(lastFire) > 2 {
                 lastFire = Date()
                 dbg("oww: DETECTED \(wakeName) score=\(score)")
                 let name = wakeName
-                DispatchQueue.main.async { self.onDetect(name) }
+                DispatchQueue.main.async {
+                    self.lastScore = score
+                    self.lastDetectAt = Date()
+                    self.onDetect(name)
+                }
+            } else if score > Self.nearMissFloor,
+                      Date().timeIntervalSince(lastNearMiss) > 1 {
+                lastNearMiss = Date()
+                DispatchQueue.main.async { self.onNearMiss(score) }
             }
         }
     }
@@ -244,7 +283,7 @@ final class OpenWakeListener {
                 best = max(best, s)
             }
         }
-        print(String(format: "max score: %.3f %@", best,
+        print(String(format: "max score: %.3f vs threshold %.2f %@", best, threshold,
                      best > threshold ? "— DETECTED" : "— no detection"))
     }
 }

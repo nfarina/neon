@@ -2,7 +2,8 @@ import AppKit
 import WebKit
 
 // Neon kiosk shell: a borderless fullscreen window hosting the eyes web page,
-// plus the wake-word listener. Esc quits; W triggers a wake for testing.
+// plus the wake-word listener. Ctrl-Opt-Cmd-Q quits (Esc under NEON_DEV=1);
+// W triggers a wake for testing.
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
@@ -13,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keyMonitor: Any?
     private var debugVisible = false
     private var statsTimer: Timer?
+    private let display = DisplayKeeper()
     private var wakeHeard = ""  // latest wake-listener transcript, for the overlay
     private var providerName = ProcessInfo.processInfo.environment["NEON_PROVIDER"]
         ?? UserDefaults.standard.string(forKey: "neon.voiceProvider") ?? "gemini"
@@ -52,26 +54,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loadEyes()
 
         window.makeKeyAndOrderFront(nil)
-        NSApp.presentationOptions = [.hideDock, .hideMenuBar]
+        Kiosk.apply()
         NSApp.activate(ignoringOtherApps: true)
 
+        display.start()
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            self?.checkIdle()
+        }
+        installExitHandlers()
+
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            self?.noteActivity()
+            if Kiosk.isQuitChord(event) {
+                NSApp.terminate(nil)
+                return nil
+            }
             if event.type == .keyUp {
                 if event.keyCode == 48 { self?.showLegend(false); return nil }
                 return event
             }
             switch event.keyCode {
-            case 53:  // esc
-                NSApp.terminate(nil)
+            case 53:  // esc — quits only in dev; in kiosk mode it does nothing,
+                      // since a stray Esc is exactly how a guest lands on the desktop
+                if !Kiosk.enabled { NSApp.terminate(nil) }
                 return nil
             case 13:  // w — manual wake, for testing without the mic
+                self?.logEvent("wake", "manual (W)")
                 self?.triggerWake()
                 return nil
-            case 1:   // s — end the voice session early
-                self?.voiceSession?.close(reason: "manual")
+            case 1:   // s — sleep now, exactly as the sleep tool does
+                self?.sleepNow()
                 return nil
             case 2:   // d — toggle the debug overlay
                 self?.toggleDebugOverlay()
+                return nil
+            case 37:  // l — toggle the event log sidebar
+                self?.toggleEventLog()
                 return nil
             case 14:  // e — cycle voice engine (takes effect next session)
                 self?.cycleEngine()
@@ -97,11 +115,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let listener = WakeWordListener()
         listener.onWake = { [weak self] command, prelude in
             guard let self, self.sfSpeechWakes else { return }
+            self.logEvent("wake", "SFSpeech: \(command ?? "(name only)")")
             self.triggerWake(command: command, prelude: prelude)
         }
         listener.onNameHeard = { [weak self] in
             // Pre-wake: eyes open and listen while the speaker finishes.
             guard let self, self.voiceSession == nil else { return }
+            self.noteActivity()
             self.webView.evaluateJavaScript("window.neon && neon.wake()")
         }
         listener.onWakeAborted = { [weak self] in
@@ -125,12 +145,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // model hears the summons and whatever follows it live.
         let oww = OpenWakeListener()
         oww.onDetect = { [weak self] name in
-            guard let self, self.voiceSession == nil else { return }
+            guard let self else { return }
+            let score = self.owwListener?.lastScore ?? 0
+            guard self.voiceSession == nil else {
+                self.logEvent("wake", String(format: "%@ %.2f — ignored, session live",
+                                             name, score))
+                return
+            }
             NSLog("Neon: openWakeWord detection (\(name))")
+            self.logEvent("wake", String(format: "%@ %.2f", name, score))
             self.triggerWake(preludeFrom: Date().addingTimeInterval(-2.0))
+        }
+        // Scores that nearly fired. Reading these from the kitchen is how you
+        // learn whether the threshold or the model is what's missing you.
+        oww.onNearMiss = { [weak self] score in
+            self?.logEvent("wake", String(format: "near miss %.2f (threshold %.2f)",
+                                          score, OpenWakeListener.threshold))
         }
         oww.start()
         owwListener = oww
+
+        // First line of the log, once the page exists to receive it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self else { return }
+            self.logEvent("session", "Neon up · \(self.providerName) · wake: \(self.wakeStatus())")
+        }
 
         // Debug hook: NEON_AUTOWAKE=1 starts a voice session shortly after
         // launch, so the full audio path is testable without speaking.
@@ -141,8 +180,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // ==================================================== deep sleep
+    // After a long stretch with nobody talking to her, the eyes fade to an
+    // ember and the backlight goes down with them — a bright rectangle in a
+    // dark kitchen at 2am is just light pollution, and the panel runs 24/7.
+    //
+    // Ambient kitchen conversation deliberately does not count as activity:
+    // wake-listener transcripts fire for any speech in the room, and dinner
+    // three metres away should not light the display back up. Only being
+    // spoken to (a wake), a live session, or the keyboard counts.
+
+    private let deepSleepAfter = ProcessInfo.processInfo.environment["NEON_DEEPSLEEP_SECS"]
+        .flatMap(Double.init) ?? 600
+    private let deepBrightness = ProcessInfo.processInfo.environment["NEON_DEEP_BRIGHTNESS"]
+        .flatMap(Float.init) ?? 0.03
+    private var lastActivity = Date()
+    private var deepAsleep = false
+    private var idleTimer: Timer?
+
+    private func noteActivity() {
+        lastActivity = Date()
+        guard deepAsleep else { return }
+        deepAsleep = false
+        display.restore(over: 0.4)
+        logEvent("wake", "deep sleep lifted")
+        webView.evaluateJavaScript("window.neon && neon.deepSleep(false)")
+    }
+
+    private func checkIdle() {
+        guard !deepAsleep, voiceSession == nil,
+              Date().timeIntervalSince(lastActivity) > deepSleepAfter else { return }
+        deepAsleep = true
+        NSLog("Neon: deep sleep after \(Int(deepSleepAfter))s idle")
+        logEvent("sleep", "deep sleep after \(Int(deepSleepAfter))s idle")
+        display.dim(to: deepBrightness, over: 6)
+        // With the backlight at a few percent there is little left for the
+        // render to do; without it the pixels have to carry the whole fade.
+        let render = display.controlsBacklight ? 0.45 : 0.12
+        webView.evaluateJavaScript("window.neon && neon.deepSleep(true, \(render))")
+    }
+
+    func applicationDidBecomeActive(_ note: Notification) {
+        Kiosk.apply()
+    }
+
+    func applicationWillTerminate(_ note: Notification) {
+        display.restoreImmediately()
+    }
+
+    /// The debug workflow runs the binary straight from a shell, so Ctrl-C is
+    /// a normal exit — and it must not leave the panel dimmed. Dispatch
+    /// sources deliver on the main queue, unlike a raw signal handler.
+    private var signalSources: [DispatchSourceSignal] = []
+    private func installExitHandlers() {
+        for sig in [SIGINT, SIGTERM] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { [weak self] in
+                self?.display.restoreImmediately()
+                exit(0)
+            }
+            source.resume()
+            signalSources.append(source)
+        }
+    }
+
     private func triggerWake(command: String? = nil, prelude: Data? = nil,
                              preludeFrom: Date? = nil) {
+        noteActivity()
         webView.evaluateJavaScript("window.neon && neon.wake()")
         startVoiceSession(command: command, prelude: prelude, preludeFrom: preludeFrom)
     }
@@ -161,6 +266,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var transparentMode = false
+    private var eventLogVisible = false
+
+    // ==================================================== event log
+    // A running trace of the conversation's machinery — sessions, transcripts
+    // both ways, tool calls, sleeps — rendered down the right edge. Events are
+    // pushed whether or not the panel is showing, so L reveals the history.
+
+    private func logEvent(_ kind: String, _ text: String) {
+        // evaluateJavaScript takes source, not arguments: both strings go
+        // through JSON encoding so quotes and newlines can't break out.
+        webView.evaluateJavaScript(
+            "window.neon && neon.event(\(Self.jsString(kind)), \(Self.jsString(text)))")
+    }
+
+    private static func jsString(_ s: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [s]),
+              let json = String(data: data, encoding: .utf8) else { return "\"\"" }
+        return String(json.dropFirst().dropLast())  // unwrap the array
+    }
+
+    private func toggleEventLog() {
+        eventLogVisible.toggle()
+        webView.evaluateJavaScript("window.neon && neon.events(\(eventLogVisible))")
+    }
+
+    /// S, and anything else that means "that's enough for now": the eyes shut
+    /// at once, the way they do when the model calls the sleep tool. The slow
+    /// dozing-off animation stays reserved for silence running out.
+    private func sleepNow() {
+        logEvent("sleep", "manual sleep (S)")
+        if let session = voiceSession {
+            // onClosed treats "manual" like "tool" — immediate close.
+            session.close(reason: "manual")
+        } else {
+            webView.evaluateJavaScript("window.neon && neon.sleep()")
+        }
+    }
 
     private func showLegend(_ show: Bool) {
         webView.evaluateJavaScript("window.neon && neon.legend(\(show))")
@@ -182,7 +324,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         providerName = engineNames[(idx + 1) % engineNames.count]
         UserDefaults.standard.set(providerName, forKey: "neon.voiceProvider")
         NSLog("Neon: voice engine -> \(providerName) (next session)")
+        logEvent("session", "engine → \(providerName) (next session)")
         pushStats()
+    }
+
+    /// Which path is actually armed to wake her, plus the last openWakeWord
+    /// hit — the answer to "is my trained model live?".
+    private func wakeStatus() -> String {
+        var parts: [String] = []
+        if let model = owwListener?.modelName {
+            parts.append(String(format: "%@ ≥%.2f", model, OpenWakeListener.threshold))
+            if let at = owwListener?.lastDetectAt, let score = owwListener?.lastScore {
+                parts.append(String(format: "last %.2f, %ds ago", score,
+                                    Int(Date().timeIntervalSince(at))))
+            }
+        } else {
+            parts.append("no wake model")
+        }
+        parts.append(sfSpeechWakes ? "+ SFSpeech" : "SFSpeech off")
+        return parts.joined(separator: " · ")
     }
 
     private func pushStats() {
@@ -193,6 +353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pairs = [
                 ["engine", "\(providerName) (idle)"],
                 ["state", "wake listener"],
+                ["wake", wakeStatus()],
                 ["lifetime", String(format: "$%.3f", UsageStore.shared.total)],
                 ["mac hears", String(wakeHeard.suffix(70))],
             ]
@@ -228,13 +389,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let safe = emotion.filter { $0.isLetter }
             self?.webView.evaluateJavaScript("window.neon && neon.emote('\(safe)')")
         }
+        session.onEvent = { [weak self] kind, text in
+            self?.logEvent(kind, text)
+        }
         session.onClosed = { [weak self] reason in
             guard let self else { return }
             NSLog("Neon: voice session ended (\(reason))")
             self.voiceSession = nil
+            self.noteActivity()   // the idle clock starts when the talking stops
             self.webView.evaluateJavaScript("window.neon && neon.hold(false)")
-            if reason == "tool" {
-                // The model put itself to sleep — eyes close right away;
+            if reason == "tool" || reason == "manual" {
+                // She put herself to sleep (or S did) — eyes close right away;
                 // the slow dozing-off animation is reserved for idle silence.
                 self.webView.evaluateJavaScript("window.neon && neon.sleep()")
             }

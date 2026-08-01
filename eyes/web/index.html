@@ -30,6 +30,31 @@
     border: 1px solid rgba(102, 224, 255, 0.22);
     transition: opacity 0.25s;
   }
+  /* Event log: a running trace of the conversation's machinery down the
+     right edge — sessions, transcripts both ways, tools, sleeps. */
+  #events {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 30vw;
+    min-width: 320px; max-width: 460px; display: none;
+    overflow-y: auto; overscroll-behavior: contain;
+    padding: 10px 14px 16px;
+    font: 11px/1.45 ui-monospace, SFMono-Regular, monospace;
+    background: rgba(3, 8, 12, 0.86);
+    border-left: 1px solid rgba(102, 224, 255, 0.16);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 22px);
+  }
+  #events::-webkit-scrollbar { width: 0; }
+  .ev { display: flex; gap: 7px; padding: 2px 0; align-items: baseline; }
+  .evt { color: #3d5b68; flex: none; }
+  .evk { color: #4e7d8c; flex: none; width: 46px; text-align: right; }
+  .evm { color: #9fd6e6; word-break: break-word; }
+  .ev-you   .evk, .ev-you   .evm { color: #eaf6ff; }
+  .ev-neon  .evk, .ev-neon  .evm { color: #66e0ff; }
+  .ev-tool  .evk, .ev-tool  .evm { color: #ffcf7a; }
+  .ev-think .evk, .ev-think .evm { color: #b3a8ff; }
+  .ev-emote .evk, .ev-emote .evm { color: #ff9ec8; }
+  .ev-wake  .evk, .ev-wake  .evm { color: #7dffc4; }
+  .ev-sleep .evk, .ev-sleep .evm { color: #6a8a97; }
+  .ev-error .evk, .ev-error .evm { color: #ff8f8f; }
 </style>
 </head>
 <body>
@@ -39,14 +64,18 @@
   <div><b>W</b> wake</div>
   <div><b>S</b> end session</div>
   <div><b>D</b> debug overlay</div>
+  <div><b>L</b> event log</div>
   <div><b>E</b> cycle engine</div>
   <div><b>T</b> ghost mode</div>
   <div><b>P</b> preview states</div>
   <div><b>X</b> cycle emotes</div>
   <div><b>Tab</b> hold for this legend</div>
-  <div><b>Esc</b> quit</div>
+  <!-- The quit chord is deliberately not listed: anyone who can read this
+       legend is standing at the kitchen counter, and it is the one shortcut
+       that gets them off Neon and into Nick's session. It lives in AGENTS.md. -->
 </div>
 <div id="badge"></div>
+<div id="events"></div>
 <script>
 "use strict";
 
@@ -91,6 +120,7 @@ const S = {
   gx:    ch(0),     // gaze -1..1
   gy:    ch(0.24),
   lum:   ch(0.35),  // brightness: dim asleep, bright awake
+  dim:   ch(1),     // master output level; deep sleep fades this to an ember
   think: ch(0),     // 0..1 blend of the thinking look
   winkL: ch(1),     // per-eye open multipliers (1 = follow the pair)
   winkR: ch(1),
@@ -115,6 +145,7 @@ let hold = false;             // a live voice session keeps the eyes awake
 let speakAmp = 0, speakTarget = 0;  // output-audio level while Neon talks
 let hearAmp = 0, hearTarget = 0;    // room-voice level while someone talks to her
 let transparent = false;      // ghost mode: eyes float over whatever's behind
+let deep = false;             // deep sleep: eyes down to an ember, backlight with them
 let thinking = false;         // model is reasoning: gaze drifts up, soft shimmer
 let thinkFlip = 1;
 
@@ -133,6 +164,7 @@ function glanceTo(x, y) {
 
 let wakeStartedAt = 0;
 function wake() {
+  if (deep) window.neon.deepSleep(false);  // any wake path lifts the ember
   if (state === "awake") { awakeUntil = now + AWAKE_SECS; return; }
   cancelTasks();
   state = "waking";
@@ -316,6 +348,46 @@ function previewNext() {
   badge(`preview: ${p}`);
 }
 
+// ============================================================ event log
+// A running trace of what actually happened, kept whether or not the panel
+// is visible — toggling it on mid-conversation should show the history, not
+// an empty box.
+const EV_MAX = 400;
+const EV_COALESCE = { you: true, neon: true };  // streamed transcript fragments
+let lastEv = null;
+function evClock() {
+  const d = new Date();
+  return [d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map(n => String(n).padStart(2, "0")).join(":");
+}
+function evScroll() {
+  const box = document.getElementById("events");
+  box.scrollTop = box.scrollHeight;
+}
+function pushEvent(kind, text) {
+  const box = document.getElementById("events");
+  const stamp = Date.now();
+  // Transcripts arrive in fragments ("set a", " timer for", " ten minutes").
+  // Grow the existing line instead of stacking one row per fragment.
+  if (lastEv && lastEv.kind === kind && EV_COALESCE[kind] && stamp - lastEv.at < 10000) {
+    lastEv.at = stamp;
+    lastEv.text += /^[\s,.!?';:]/.test(text) ? text : " " + text;
+    lastEv.el.textContent = lastEv.text;
+    evScroll();
+    return;
+  }
+  const row = document.createElement("div");
+  row.className = "ev ev-" + kind;
+  const t = document.createElement("span"); t.className = "evt"; t.textContent = evClock();
+  const k = document.createElement("span"); k.className = "evk"; k.textContent = kind;
+  const m = document.createElement("span"); m.className = "evm"; m.textContent = text;
+  row.append(t, k, m);
+  box.appendChild(row);
+  while (box.childElementCount > EV_MAX) box.removeChild(box.firstChild);
+  lastEv = { kind, at: stamp, text, el: m };
+  evScroll();
+}
+
 // ============================================================ render
 function draw() {
   const t = now;
@@ -327,6 +399,12 @@ function draw() {
   } else {
     ctx.fillStyle = "#04060a";
     ctx.fillRect(0, 0, W, H);
+  }
+  // Everything after the backdrop fades together in deep sleep. The backdrop
+  // itself stays opaque — it is what clears the canvas, so drawing it faded
+  // would smear the previous frame instead of replacing it.
+  ctx.globalAlpha = clamp(S.dim.v, 0, 1);
+  if (!transparent) {
     const vg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
     vg.addColorStop(0, "rgba(16,24,32,0.55)");
     vg.addColorStop(1, "rgba(0,0,0,0)");
@@ -400,11 +478,14 @@ function draw() {
     ctx.restore();
   }
 
+  ctx.globalAlpha = 1;
+
   // (A screen-edge "hearing" glow lived here briefly; retired — recognizer
   // partials lag speech too much for it to feel live. Open eyes = listening.)
 }
 
 // ============================================================ main loop
+let lastDraw = -1;
 function frame(ms) {
   now = ms / 1000;
   runTasks();
@@ -433,7 +514,9 @@ function frame(ms) {
   // of a long question must not drowse mid-sentence).
   if (hearAmp > 0.25 && state === "awake") awakeUntil = now + AWAKE_SECS;
   if (state === "awake" && now > awakeUntil) drowse();
-  draw();
+  // Fully faded into deep sleep, nothing moves faster than the odd slow stir,
+  // and this machine renders the eyes around the clock — 10 fps is plenty.
+  if (!deep || S.dim.dur > 0 || now - lastDraw > 0.1) { draw(); lastDraw = now; }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -445,9 +528,29 @@ window.neon = {
   // (grace window); wake() snaps back if the speaker resumes.
   doze() { if (state === "awake") drowse(); },
   hold(b) { hold = !!b; if (!hold && state === "awake") awakeUntil = now + 2; },
+  // Deep sleep is driven by the shell's idle clock rather than by the eyes:
+  // the shell also takes the panel backlight down, and passes the render
+  // level it wants so the two together land on "barely there", not "gone".
+  // The fade is long enough that nobody in the room sees it happen.
+  deepSleep(on, level) {
+    on = !!on;
+    if (on === deep) return;
+    deep = on;
+    if (on) {
+      if (state !== "asleep" && state !== "sleeping") sleep();
+      to(S.dim, typeof level === "number" ? level : 0.12, 6.0, easeInOutCubic);
+    } else {
+      to(S.dim, 1, 0.5, easeOutCubic);
+    }
+  },
   speaking(a) { speakTarget = Math.min(1, Math.max(0, a)); },
   hearing(a) { hearTarget = Math.max(hearTarget, Math.min(1, Math.max(0, a))); },
   debug(show) { document.getElementById("debug").style.display = show ? "flex" : "none"; },
+  event(kind, text) { pushEvent(kind, text); },
+  events(show) {
+    document.getElementById("events").style.display = show ? "block" : "none";
+    if (show) evScroll();  // scrollHeight is 0 while hidden, so land at the tail now
+  },
   transparent(on) {
     transparent = !!on;
     document.documentElement.style.background = on ? "transparent" : "";
@@ -484,11 +587,15 @@ function emoteNext() {
   window.neon.emote(names[emoteIx]);
 }
 window.neon.emoteNext = emoteNext;
+// Keys are normally swallowed by the shell and re-issued through the API
+// above; these bindings are for driving the page directly in a browser.
+let evShown = false;
 addEventListener("keydown", e => {
   if (e.key === " " || e.key === "w") wake();
   if (e.key === "s") sleep();
   if (e.key === "p") previewNext();
   if (e.key === "x") emoteNext();
+  if (e.key === "l") { evShown = !evShown; window.neon.events(evShown); }
 });
 </script>
 </body>
