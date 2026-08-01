@@ -207,15 +207,23 @@ Work toward Neon's spoken conversation lives under `voice/`.
   the built-in TFLite conversion always failing) so they are not rediscovered.
   `data/`, `output/`, and `logs/` are gitignored — ~19 GB of corpora, clips,
   and features, all reproducible.
-- Setting up a second machine (August 1, 2026) surfaced what a fresh clone
-  does not get. `~/.config/neon/` holds `secrets.env` and `profile.md`, which
-  correctly stay out of git, and `oww/`, which was only ever a copy — the
-  models are now in `wake/models/`, so the remaining step is copying them plus
-  openWakeWord's two shared feature extractors into `~/.config/neon/oww/`.
-  Missing models degrade cleanly: `OpenWakeListener.loadModels()` logs
-  "models missing" and returns false, leaving the SFSpeech wake path armed, so
-  a bare clone still wakes — it just loses openWakeWord's far-field range and
-  better first-turn latency.
+- Wake models ship in the app bundle, not `~/.config/neon/oww/` (changed
+  August 1, 2026 while setting up a second machine). They are build artifacts
+  locked to the pipeline constants in `OpenWakeListener`, so a per-machine
+  copy was an install step pretending to be configuration — and a silent way
+  for a model and the code reading it to drift apart. `wake/models/*.onnx`
+  (wake model plus the two shared feature extractors) is copied into
+  `Neon.app/Contents/Resources/oww/` by `build.sh`.
+  `OpenWakeListener.modelDir` resolves the bundle first, then walks up from
+  cwd for `wake/models` — the dev fallback exists because the `NEON_OWW_TEST`
+  harness runs the bare binary out of `.build/`, where there is no bundle.
+  `main.swift` asks the same property for the SFSpeech handoff rather than
+  rebuilding the path (it had its own copy, which would have kept SFSpeech
+  armed on a fresh clone). Missing models still degrade cleanly to the
+  SFSpeech wake path.
+- So a fresh clone now needs only `~/.config/neon/secrets.env` and
+  `profile.md`, which correctly stay out of git. Everything else is
+  `git clone` + `eyes/rebuild.sh`.
 - Wake-word findings from live testing: Apple's recognizer sometimes fuses
   the phrase into one token — observed "Hey Neon" → "Henon" — so the matcher
   accepts merged forms too. `dbg()` breadcrumbs (raw stderr) log every
@@ -439,9 +447,9 @@ Work toward Neon's spoken conversation lives under `voice/`.
 - openWakeWord runs in-process alongside the SFSpeech matcher
   (`OpenWakeListener.swift`, ONNX Runtime via Microsoft's SwiftPM package —
   the only external dependency; module `OnnxRuntimeBindings`). Models in
-  `~/.config/neon/oww/`: melspectrogram.onnx + embedding_model.onnx (shared
-  feature extractors from the openWakeWord v0.5.1 release) plus any other
-  .onnx as the wake model. A file with "neon" in the name always wins, so
+  `wake/models/`, bundled at build: melspectrogram.onnx + embedding_model.onnx
+  (shared feature extractors from the openWakeWord v0.5.1 release) plus any
+  other .onnx as the wake model. A file with "neon" in the name always wins, so
   the retired `hey_jarvis_v0.1` trial model can sit in the directory
   without silently taking over (the loader logs which it ignored).
   `hey_neon.onnx` (first training run, 2026-08-01) is live: 0.92 peak on
@@ -467,7 +475,7 @@ Work toward Neon's spoken conversation lives under `voice/`.
   2 s before the phrase (`preludeFrom`), so the model hears the summons
   and whatever follows, with no gap during connect.
 - The wake-path handoff is automatic: when any .onnx whose name contains
-  "neon" appears in ~/.config/neon/oww/, SFSpeech stops triggering wakes
+  "neon" is in the bundled model directory, SFSpeech stops triggering wakes
   (NEON_SFWAKE=1 re-arms it for debugging) and openWakeWord owns waking.
   SFSpeech keeps running regardless for transcripts, the overlay, voice
   activity, and the pre-wake eye cue. First-turn latency largely solves

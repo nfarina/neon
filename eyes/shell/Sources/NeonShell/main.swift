@@ -19,14 +19,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var providerName = ProcessInfo.processInfo.environment["NEON_PROVIDER"]
         ?? UserDefaults.standard.string(forKey: "neon.voiceProvider") ?? "gemini"
 
-    /// Once a trained Neon wake model exists in ~/.config/neon/oww/, the
-    /// openWakeWord path owns waking (it opens the session mid-phrase, so
-    /// connect overlaps speech). SFSpeech then only feeds transcripts, the
-    /// overlay, and voice-activity — NEON_SFWAKE=1 re-arms it for debugging.
+    /// When a trained Neon wake model is present, the openWakeWord path owns
+    /// waking (it opens the session mid-phrase, so connect overlaps speech).
+    /// SFSpeech then only feeds transcripts, the overlay, and voice-activity —
+    /// NEON_SFWAKE=1 re-arms it for debugging. Models ship in the bundle, so
+    /// this is normally true; it stays a check so a build without them still
+    /// wakes rather than going deaf.
     private let sfSpeechWakes: Bool = {
         if ProcessInfo.processInfo.environment["NEON_SFWAKE"] == "1" { return true }
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/neon/oww")
+        guard let dir = OpenWakeListener.modelDir else { return true }
         let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         let hasNeonModel = files.contains {
             $0.hasSuffix(".onnx") && $0.lowercased().contains("neon")

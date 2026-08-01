@@ -11,6 +11,11 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/web"
 cp .build/release/NeonShell "$APP/Contents/MacOS/Neon"
 cp ../web/index.html "$APP/Contents/Resources/web/index.html"
 
+# Wake models ship in the bundle — see wake/README.md. Only .onnx: the .tflite
+# export exists for other runtimes, and ONNX Runtime is what the shell loads.
+mkdir -p "$APP/Contents/Resources/oww"
+cp ../../wake/models/*.onnx "$APP/Contents/Resources/oww/"
+
 cat > "$APP/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

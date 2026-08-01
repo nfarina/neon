@@ -4,7 +4,7 @@ import OnnxRuntimeBindings
 // openWakeWord detection: melspectrogram -> speech embedding -> wake model,
 // all tiny ONNX models on CPU, fed 80 ms chunks of 16 kHz audio. Unlike the
 // SFSpeech matcher this spots the phrase mid-stream with no silence
-// bookkeeping. Models live in ~/.config/neon/oww/ — melspectrogram.onnx and
+// bookkeeping. Models ship in the app bundle from wake/models/ — melspectrogram.onnx and
 // embedding_model.onnx are openWakeWord's shared feature extractors; any
 // other .onnx file is treated as the wake model (drop in hey_neon.onnx
 // later and it just works).
@@ -66,14 +66,31 @@ final class OpenWakeListener {
 
     // MARK: - Setup
 
-    private static var modelDir: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/neon/oww")
+    /// The models ship inside the app bundle — they are build artifacts locked
+    /// to the pipeline constants below, not something to configure per machine.
+    /// Same idiom as `loadEyes()`: bundle first, then a dev fallback so the
+    /// offline harness works when running the bare binary out of `.build/`.
+    static var modelDir: URL? {
+        if let url = Bundle.main.url(forResource: "oww", withExtension: nil) {
+            return url
+        }
+        let fm = FileManager.default
+        var dir = URL(fileURLWithPath: fm.currentDirectoryPath)
+        for _ in 0..<5 {
+            let candidate = dir.appendingPathComponent("wake/models")
+            if fm.fileExists(atPath: candidate.path) { return candidate }
+            dir.deleteLastPathComponent()
+        }
+        return nil
     }
 
     private func loadModels() -> Bool {
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(at: Self.modelDir,
+        guard let dir = Self.modelDir else {
+            dbg("oww: no model directory (bundle Resources/oww or wake/models)")
+            return false
+        }
+        guard let files = try? fm.contentsOfDirectory(at: dir,
                                                       includingPropertiesForKeys: nil)
         else { return false }
         let onnx = files.filter { $0.pathExtension == "onnx" }
@@ -89,7 +106,7 @@ final class OpenWakeListener {
                   $0.lastPathComponent.lowercased().contains("neon")
               }) ?? candidates.first
         else {
-            dbg("oww: models missing in \(Self.modelDir.path)")
+            dbg("oww: models missing in \(dir.path)")
             return false
         }
         do {

@@ -31,17 +31,22 @@ new run by copying `output/<name>/<name>.onnx` into `models/`.
 
 ## Deploying to Neon
 
-The shell loads wake models from `~/.config/neon/oww/`, not from this repo:
+`models/` is what the shell ships. `eyes/shell/build.sh` copies every `.onnx`
+in it into `Neon.app/Contents/Resources/oww/`, so deploying a new model is:
 
 ```sh
-mkdir -p ~/.config/neon/oww
-cp models/hey_neon.onnx ~/.config/neon/oww/
+cp output/<name>/<name>.onnx models/hey_neon.onnx
+eyes/rebuild.sh
 ```
 
-That directory also needs openWakeWord's two shared feature extractors,
-`melspectrogram.onnx` and `embedding_model.onnx`, from the upstream v0.5.1
-release. A model whose filename contains "neon" is what arms the openWakeWord
-wake path; without it the shell falls back to the SFSpeech matcher.
+Alongside the wake model, `models/` holds openWakeWord's two shared feature
+extractors, `melspectrogram.onnx` and `embedding_model.onnx`, vendored from the
+upstream v0.5.1 release — they are inputs to every model this pipeline makes,
+not per-model artifacts.
+
+A model whose filename contains "neon" is what arms the openWakeWord path;
+without one the shell falls back to the SFSpeech matcher. The `.tflite` export
+is kept for other runtimes and is not bundled — the shell uses ONNX Runtime.
 
 ## Results
 
