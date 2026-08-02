@@ -588,6 +588,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         session.onDoze = { [weak self] dozing in
             self?.webView.evaluateJavaScript("window.neon && neon.\(dozing ? "doze" : "wake")()")
         }
+        session.onCapture = { [weak self] in
+            self?.webView.evaluateJavaScript("window.neon && neon.capture()")
+        }
         session.onEmote = { [weak self] emotion in
             let safe = emotion.filter { $0.isLetter }
             self?.webView.evaluateJavaScript("window.neon && neon.emote('\(safe)')")

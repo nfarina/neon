@@ -11,6 +11,16 @@ build scripts. The first ambient-assistant implementation, under `eyes/`.
   hue-offset channel (S.hueX) back it; wake/drowse/sleep call clearEmote()
   so a cancelled mid-emote can't strand a closed eye. The prompt encourages
   frequent, unannounced use. X key cycles all emotes with the badge.
+- Taking a picture has its own look, fired by `capture_image` rather than
+  chosen by the model (`neon.capture()`, channel `S.cam`): lids narrow, the
+  gaze locks dead centre and saccades stop — people stop glancing around when
+  they're actually looking at something — an aperture ring contracts inside
+  each eye, and a sensor line sweeps top to bottom. It ends a beat wider than
+  it started, like refocusing on the room.
+  The sweep is driven by elapsed time (`captureAt`), *not* by the `cam`
+  channel: tied to `cam` the line sits at an edge exactly when the state is
+  most visible, so it is never actually seen. First version did that and
+  looked like nothing was happening.
 - **Emotes must act on shape, not brightness.** The first set mostly pushed
   `open` and `lum`, and Nick found them all too subtle except `confused` —
   which works precisely because it changes the *silhouette* (one lid at half,

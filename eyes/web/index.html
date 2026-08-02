@@ -125,6 +125,7 @@
   <div><b>T</b> ghost mode</div>
   <div><b>P</b> preview states</div>
   <div><b>X</b> cycle emotes</div>
+  <div><b>P</b> includes capture</div>
   <div><b>Tab</b> hold for this legend</div>
   <div><b>⌃⌥⌘H</b> step aside (system dialogs)</div>
   <!-- The quit chord is deliberately not listed: anyone who can read this
@@ -193,6 +194,7 @@ const S = {
   pop:   ch(1),     // uniform scale, for surprise and heartbeats
   offL:  ch(0),     // per-eye vertical offset in eye-heights (bounce, tilt)
   offR:  ch(0),
+  cam:   ch(0),     // 0..1 taking a picture: aperture ring + sensor scan
 };
 
 // scheduled one-shot tasks, driven by the frame clock
@@ -258,7 +260,7 @@ function saccadeLoop() {
   if (state !== "awake") return;
   after(rand(0.6, 2.4), () => {
     if (state !== "awake") return;
-    if (!thinking) {
+    if (!thinking && S.cam.v < 0.05) {
       if (hearAmp > 0.25) {
         // Someone's talking to her: hold an attentive, near-center gaze
         // with only tiny shifts, like meeting the speaker's eyes.
@@ -279,7 +281,26 @@ function saccadeLoop() {
 function clearEmote() {
   to(S.winkL, 1, 0.2); to(S.winkR, 1, 0.2); to(S.hueX, 0, 0.3);
   to(S.brow, 0, 0.25); to(S.curve, 0, 0.25); to(S.pop, 1, 0.25);
-  to(S.offL, 0, 0.25); to(S.offR, 0, 0.25);
+  to(S.offL, 0, 0.25); to(S.offR, 0, 0.25); to(S.cam, 0, 0.25);
+}
+
+// Taking a picture. Not an emote — the model doesn't choose it, the camera
+// tool fires it — but the same rule applies: it has to change the eyes'
+// silhouette to read at all. Lids narrow, the gaze locks dead centre (people
+// stop glancing around when they're actually looking at something), an
+// aperture ring contracts and a sensor line sweeps down.
+let captureAt = -9;
+function capture() {
+  if (state !== "awake" && state !== "waking") wake();
+  captureAt = now;
+  to(S.gx, 0, 0.12, easeOutQuint); to(S.gy, 0, 0.12, easeOutQuint);
+  to(S.cam, 1, 0.16, easeOutCubic);
+  to(S.pop, 0.94, 0.16);            // squint in
+  after(0.62, () => {
+    to(S.cam, 0, 0.3, easeInCubic);
+    to(S.pop, 1.05, 0.14, easeOutBack);   // and back open, a beat wider
+    after(0.2, () => to(S.pop, 1, 0.22));
+  });
 }
 // Every emote should be recognisable in silhouette, with the shape held long
 // enough to register (~1.5 s) — a fast flicker of brightness reads as a
@@ -428,7 +449,7 @@ sleepTwitchLoop(); // start life in asleep state
 // Cycle through the visual states with synthetic drivers, for eyeballing
 // animations without a live session. P advances; last step returns to sleep.
 let preview = null;   // "hearing" | "speaking" while synthesized in frame()
-const previewStates = ["awake", "hearing", "thinking", "speaking", "off"];
+const previewStates = ["awake", "hearing", "thinking", "speaking", "capture", "off"];
 let previewIx = -1;
 let badgeTimer = null;
 function badge(text) {
@@ -601,7 +622,8 @@ function draw() {
   const driftX = (Math.sin(t * 1.7) + Math.sin(t * 2.9) * 0.5) * 0.008 * awakeness;
   const driftY = (Math.sin(t * 1.3) + Math.sin(t * 2.3) * 0.5) * 0.006 * awakeness;
 
-  const openEff = clamp((S.open.v - 0.30 * th) * S.blink.v + breatheOpen, 0.035, 1.18);
+  const openEff = clamp((S.open.v - 0.30 * th - 0.26 * S.cam.v) * S.blink.v + breatheOpen,
+                        0.035, 1.18);
   // Thinking: slow left-right scan (reading something invisible) + upward bias
   const gx = S.gx.v + driftX + Math.sin(t * 1.15) * 0.42 * th;
   const gy = S.gy.v + driftY - 0.5 * th;
@@ -678,6 +700,36 @@ function draw() {
     ctx.fill();
     ctx.restore();
 
+    // Camera: aperture ring closing in, plus a sensor line sweeping down.
+    const cam = S.cam.v;
+    if (cam > 0.01) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+      ctx.clip();
+      const ringR = w * (0.52 - 0.34 * cam);
+      ctx.strokeStyle = `hsla(${hue + 10}, 100%, 88%, ${0.75 * cam})`;
+      ctx.lineWidth = Math.max(1.5, B * 0.004);
+      ctx.beginPath();
+      ctx.arc(cx, y + h / 2, Math.max(1, ringR), 0, Math.PI * 2);
+      ctx.stroke();
+      // One clean top-to-bottom pass, timed from the capture rather than
+      // tied to `cam` — driven by cam the line sits at an edge exactly when
+      // the state is most visible, which is to say never seen.
+      const sweep = clamp((t - captureAt) / 0.5, 0, 1);
+      if (sweep < 1) {
+        const sweepY = y + h * sweep;
+        const band = h * 0.16;
+        const grad = ctx.createLinearGradient(0, sweepY - band, 0, sweepY + band);
+        grad.addColorStop(0, `hsla(${hue}, 100%, 95%, 0)`);
+        grad.addColorStop(0.5, `hsla(${hue + 8}, 100%, 97%, ${0.85 * cam})`);
+        grad.addColorStop(1, `hsla(${hue}, 100%, 95%, 0)`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, sweepY - band, w, band * 2);
+      }
+      ctx.restore();
+    }
+
     ctx.restore();  // brow / crescent clips
   }
 
@@ -703,6 +755,7 @@ function frame(ms) {
     if (state === "awake") awakeUntil = now + AWAKE_SECS;
     const wantThink = preview === "thinking";
     if (thinking !== wantThink) window.neon.thinking(wantThink);
+    if (preview === "capture" && S.cam.v < 0.02 && S.cam.dur <= 0) capture();
     if (preview === "hearing") hearTarget = Math.max(hearTarget, 0.5 + Math.sin(now * 2.1) * 0.15);
     if (preview === "speaking") speakTarget = Math.max(speakTarget, 0.3 + (Math.sin(now * 3.7) * 0.5 + 0.5) * 0.55);
   }
@@ -769,6 +822,7 @@ window.neon = {
     document.body.style.background = on ? "transparent" : "";
   },
   legend(show) { document.getElementById("legend").style.display = show ? "block" : "none"; },
+  capture() { capture(); },
   emote(name) {
     const fn = EMOTES[name];
     if (!fn) return;

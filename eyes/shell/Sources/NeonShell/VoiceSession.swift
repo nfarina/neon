@@ -14,6 +14,8 @@ final class VoiceSession: NSObject {
     var onDoze: (Bool) -> Void = { _ in }
     /// The model called emote — animate the named feeling in the eyes.
     var onEmote: (String) -> Void = { _ in }
+    /// The model called capture_image — show her taking the picture.
+    var onCapture: () -> Void = { }
     /// Called once when the session ends; reason "tool" means the model put
     /// itself to sleep and the eyes should close immediately.
     var onClosed: (String) -> Void = { _ in }
@@ -591,6 +593,7 @@ final class VoiceSession: NSObject {
     }
 
     private func handleCapture(id: String?) {
+        onCapture()   // eyes narrow and focus, whether or not a frame exists
         if let frame = latestFrame, let msg = engine.videoMessage(frame) {
             NSLog("Neon voice: capture_image — sending frame (\(frame.count / 1024) KB)")
             trace("tool", "capture_image → frame sent (\(frame.count / 1024) KB)")
