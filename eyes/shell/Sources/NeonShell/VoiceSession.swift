@@ -55,6 +55,11 @@ final class VoiceSession: NSObject {
         word "task", or that a tool told you. If it woke you, announce it and \
         then call \(sleepToolName) unless someone answers you.
 
+        You remember things across conversations: call \(rememberToolName) \
+        when something is worth knowing later, and \(recallToolName) when \
+        someone refers to something from before. What you already remember is \
+        listed below — that's knowledge, not a script; don't read it back.
+
         You hear everything near the microphone, including people talking to \
         each other rather than to you. If speech clearly isn't directed at \
         you, don't respond to it, comment on it, or echo it — just stay \
@@ -153,6 +158,30 @@ final class VoiceSession: NSObject {
         if let here = LocationProvider.shared.promptLine() {
             system += "\n\n\(here)"
         }
+        MemoryStore.shared.reloadIfChanged()   // a dream may have rewritten it
+        // Memory arrives two ways. The digest is what she carries into every
+        // conversation without being asked — recent and often-used facts.
+        if let digest = MemoryStore.shared.digest() {
+            system += """
+
+
+                Things you remember (you wrote these down yourself; treat them \
+                as known, don't recite them unprompted):
+                \(digest)
+                """
+        }
+        // And when the wake phrase came with words attached, those words are
+        // the best query we will ever have for this conversation — search on
+        // them now, so the answer to "what did I say about the tennis thing?"
+        // is already in front of her rather than a tool call away.
+        if let opening = firstUtterance {
+            let hits = MemoryStore.shared.search(opening, limit: 3)
+                .filter { digestMisses($0, in: system) }
+            if !hits.isEmpty {
+                system += "\n\nPossibly relevant to what they're about to ask:\n"
+                    + hits.map { "- \($0.text)" }.joined(separator: "\n")
+            }
+        }
         if let recent = ConversationLog.shared.recentContext() {
             system += """
 
@@ -221,6 +250,11 @@ final class VoiceSession: NSObject {
     /// quiet or far-away speakers.
     func noteVoiceActivity() {
         lastVoiceAt = Date()
+    }
+
+    /// Don't print a memory twice when the digest already carried it.
+    private func digestMisses(_ m: Memory, in prompt: String) -> Bool {
+        !prompt.contains(m.text)
     }
 
     private func trace(_ kind: String, _ text: String) {
@@ -350,6 +384,28 @@ final class VoiceSession: NSObject {
                     requestSleep()
                 }
                 else if name == captureToolName { handleCapture(id: id) }
+                else if name == rememberToolName {
+                    let fact = (args["fact"] as? String) ?? ""
+                    let saved = MemoryStore.shared.remember(fact)
+                    trace("memory", saved == nil ? "already knew: \(fact)" : "remembered: \(fact)")
+                    if let resp = engine.toolResponseMessage(
+                        id: id, name: name,
+                        result: saved == nil ? "Already knew that — kept the fuller version."
+                                             : "Saved.") {
+                        sendJSON(resp)
+                    }
+                }
+                else if name == recallToolName {
+                    let query = (args["query"] as? String) ?? ""
+                    let hits = MemoryStore.shared.search(query)
+                    trace("memory", "recall \"\(query)\" — \(hits.count) hit\(hits.count == 1 ? "" : "s")")
+                    let result = hits.isEmpty
+                        ? "Nothing remembered about that."
+                        : hits.map { "- \($0.text)" }.joined(separator: "\n")
+                    if let resp = engine.toolResponseMessage(id: id, name: name, result: result) {
+                        sendJSON(resp)
+                    }
+                }
                 else if name == timerToolName {
                     // No label is the normal case — the clock alone is the UI.
                     let label = (args["label"] as? String) ?? ""

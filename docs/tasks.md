@@ -5,8 +5,10 @@ owns background-task state; `main.swift` owns the announce channel; the left
 edge of `web/index.html` renders the list. The kitchen timer is separate —
 `KitchenTimer.swift`, its own pill at the bottom of the screen.
 
-Built 2026-08-02. The agent runner — `claude -p` in a sandbox — plugs into
-`TaskStore`'s lifecycle next.
+Built 2026-08-02. **`TaskStore` is dormant**: no task tools are declared, so
+nothing can create one, and the left-edge list renders empty. The announce
+channel and the store are wired and tested, waiting on the agent runner —
+`claude -p` in a sandbox — which Nick parked to build memory first.
 
 ## The kitchen timer is not a task
 

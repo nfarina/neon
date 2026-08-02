@@ -59,6 +59,25 @@ let timerToolDescription = """
     it's for ("pasta", "tea") — never invent one, and leave it out for a \
     plain "set a timer for five minutes".
     """
+// Memory. Deliberately two tools rather than one magic one: what she chooses
+// to write down is a judgement call, and making it explicit means the store
+// stays small enough to stay useful.
+let rememberToolName = "remember"
+let rememberToolDescription = """
+    Save something worth knowing later — a preference, a plan, a fact about \
+    someone, how they like something done. Write it as a short standalone \
+    sentence that will still make sense in a month ("Alex's tennis lesson \
+    moved to Thursdays", not "it moved"). Don't save passing chatter, \
+    anything you were told to forget, or things you can look up. You don't \
+    need permission and shouldn't announce it — just remember and carry on.
+    """
+let recallToolName = "recall"
+let recallToolDescription = """
+    Look through what you remember. Use it when someone refers to something \
+    from before, asks what you know about a person or plan, or when an \
+    answer would be better if you checked first. Query with the words you'd \
+    expect the memory to contain.
+    """
 let timerCheckToolName = "check_timer"
 let timerCheckToolDescription = """
     How much time is left on the kitchen timer, or whether it's ringing now.
@@ -105,9 +124,11 @@ struct GeminiEngine: VoiceEngine {
     var textInRate = 0.75, textOutRate = 4.50
     /// Thinking level for Gemini 3.x; nil for 2.5, which uses a different
     /// (budget-based) schema. Validated by voice/gemini-config-test.mjs.
-    /// LOW keeps spoken replies snappy — HIGH added a multi-second pause to
-    /// every turn; search grounding works at any level.
-    var thinkingLevel: String? = "LOW"
+    /// HIGH added a multi-second pause to every turn and was backed out to
+    /// LOW; MEDIUM is the middle setting Nick chose once the conversation had
+    /// more to reason about (memory, tools). Search grounding works at any
+    /// level. If first-turn latency creeps back up, this is the first dial.
+    var thinkingLevel: String? = "MEDIUM"
     let voice = "Leda"
     let audioInRate = 3.00, audioOutRate = 12.00
     let sendSampleRate = 16000.0
@@ -157,6 +178,24 @@ struct GeminiEngine: VoiceEngine {
                                             "description": "How long from now, in seconds"],
                             ],
                             "required": ["seconds"],
+                         ]],
+                        ["name": rememberToolName, "description": rememberToolDescription,
+                         "parameters": [
+                            "type": "OBJECT",
+                            "properties": [
+                                "fact": ["type": "STRING",
+                                         "description": "One standalone sentence, understandable with no other context"],
+                            ],
+                            "required": ["fact"],
+                         ]],
+                        ["name": recallToolName, "description": recallToolDescription,
+                         "parameters": [
+                            "type": "OBJECT",
+                            "properties": [
+                                "query": ["type": "STRING",
+                                          "description": "Words you'd expect in the memory — a name, a topic"],
+                            ],
+                            "required": ["query"],
                          ]],
                         ["name": timerCheckToolName, "description": timerCheckToolDescription],
                         ["name": timerStopToolName, "description": timerStopToolDescription],
