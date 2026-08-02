@@ -10,6 +10,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/web"
 cp .build/release/NeonShell "$APP/Contents/MacOS/Neon"
 cp ../web/index.html "$APP/Contents/Resources/web/index.html"
+# Seed for ~/Code/neon-agent/CLAUDE.md, written on the first task and owned by
+# the agent afterwards.
+cp ../../agent/CLAUDE.md "$APP/Contents/Resources/agent-CLAUDE.md"
 
 # Wake models ship in the bundle — see wake/README.md. Only .onnx: the .tflite
 # export exists for other runtimes, and ONNX Runtime is what the shell loads.

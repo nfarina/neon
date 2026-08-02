@@ -43,6 +43,15 @@ final class VoiceSession: NSObject {
         when someone's sweet. Don't announce it or mention the tool; just \
         let your eyes react while you talk.
 
+        For anything that needs real work — research, comparisons, looking \
+        several things up — hand it to Claude Code with \(startTaskToolName) \
+        and carry on talking; you'll be told when it lands. The family knows \
+        Claude is what's behind it, so "have Claude look into that" is a \
+        normal thing for them to say and you can mention it naturally. But \
+        when a result comes back, just say the answer — nobody needs "Claude \
+        says". Whatever you pass as instructions is all it gets: it can't ask \
+        you anything once it starts.
+
         There is one kitchen timer, and it rings by itself on screen — you \
         are not the alarm. Set it, check it, and stop it when asked. If \
         someone says "stop", "turn it off" or similar while it's ringing, \
@@ -400,6 +409,51 @@ final class VoiceSession: NSObject {
                     requestSleep()
                 }
                 else if name == captureToolName { handleCapture(id: id) }
+                else if name == startTaskToolName {
+                    let title = (args["title"] as? String) ?? "task"
+                    let instructions = (args["instructions"] as? String) ?? ""
+                    switch TaskRunner.shared.start(title: title, instructions: instructions,
+                                                   requester: speakerHint) {
+                    case .success(let task):
+                        trace("task", "\(task.id) started: \(title)")
+                        if let resp = engine.toolResponseMessage(
+                            id: id, name: name,
+                            result: "Started as \(task.id). You'll be told when it's done — "
+                                  + "don't promise to watch it.") { sendJSON(resp) }
+                    case .failure(let refusal):
+                        trace("task", "start refused: \(refusal.reason)")
+                        if let resp = engine.toolResponseMessage(id: id, name: name,
+                                                                 result: refusal.reason) {
+                            sendJSON(resp)
+                        }
+                    }
+                }
+                else if name == listTasksToolName {
+                    let summary = TaskStore.shared.summary()
+                    trace("task", "list")
+                    if let resp = engine.toolResponseMessage(id: id, name: name, result: summary) {
+                        sendJSON(resp)
+                    }
+                }
+                else if name == checkTaskToolName {
+                    let taskID = (args["id"] as? String) ?? ""
+                    let detail = TaskStore.shared.describe(id: taskID)
+                    trace("task", "check \(taskID)")
+                    if let resp = engine.toolResponseMessage(id: id, name: name, result: detail) {
+                        sendJSON(resp)
+                    }
+                }
+                else if name == cancelTaskToolName {
+                    let taskID = (args["id"] as? String) ?? ""
+                    TaskRunner.shared.cancel(id: taskID)
+                    let ok = TaskStore.shared.cancel(id: taskID)
+                    trace("task", "cancel \(taskID) — \(ok ? "cancelled" : "not running")")
+                    if let resp = engine.toolResponseMessage(
+                        id: id, name: name,
+                        result: ok ? "Stopped \(taskID)." : "Nothing running with id \(taskID).") {
+                        sendJSON(resp)
+                    }
+                }
                 else if name == rememberToolName {
                     let fact = (args["fact"] as? String) ?? ""
                     let saved = MemoryStore.shared.remember(fact)

@@ -5,10 +5,83 @@ owns background-task state; `main.swift` owns the announce channel; the left
 edge of `web/index.html` renders the list. The kitchen timer is separate —
 `KitchenTimer.swift`, its own pill at the bottom of the screen.
 
-Built 2026-08-02. **`TaskStore` is dormant**: no task tools are declared, so
-nothing can create one, and the left-edge list renders empty. The announce
-channel and the store are wired and tested, waiting on the agent runner —
-`claude -p` in a sandbox — which Nick parked to build memory first.
+Built 2026-08-02. `TaskRunner.swift` runs the work; `TaskStore.swift` tracks
+it; `main.swift` announces completions.
+
+## The runner
+
+`claude -p --output-format stream-json --verbose`, spawned directly. Not the
+Agent SDK: it is Node/Python only, so using it would mean a sidecar process and
+an IPC protocol to reach a subprocess Swift can already spawn. The stream gives
+everything needed — `system/init`, `assistant` messages carrying `tool_use` as
+it happens, and a final `result` with the answer, cost and duration.
+
+Two things learned by running it before writing the parser:
+
+- It waits 3 seconds for stdin on every invocation unless stdin is redirected.
+  `FileHandle.nullDevice` — otherwise every task pays it.
+- A haiku on Opus cost **$0.09**. The default model is therefore `sonnet`
+  (`NEON_TASK_MODEL` overrides); most kitchen tasks are lookups, not hard
+  reasoning.
+
+It is spawned through `zsh -lc` so `PATH` matches Nick's terminal — `claude` is
+installed per-user, not in `/usr/bin`.
+
+## The agent's home
+
+`~/Code/neon-agent/` — an ordinary Claude Code project that persists between
+tasks, with `agent/CLAUDE.md` from this repo seeded into it on first run. After
+that **the agent owns the file**; it is told to keep it current, and
+overwriting would delete what it learned.
+
+Each task runs with `tasks/<id>/` as its working directory, which is also what
+makes the home `CLAUDE.md` apply: Claude Code walks up from cwd. Scratch files
+land in the task folder, durable knowledge in the home folder (`NOTES.md`,
+topic files) — the ordinary way a project accumulates knowledge.
+
+The seed lookup is bundle-first with a walk-up fallback to `agent/CLAUDE.md`,
+because the offline harness runs the bare binary out of `.build` where
+`Bundle.main` is not the app. Without the fallback a test task runs with **no
+instructions at all**, which looks like success and isn't — that happened, and
+the tell was a haiku that arrived in 7 s instead of 19.
+
+## What the agent is told
+
+`agent/CLAUDE.md` is worth reading in full, but the load-bearing part is that
+**the final message is read aloud in a kitchen**: short, plain spoken English,
+no markdown, the answer rather than a description of the work, and honest when
+it failed. The long version goes in files. It also knows it is headless —
+nobody can answer a follow-up, so an ambiguous request gets the most reasonable
+reading and a stated assumption rather than a question that reaches a kitchen
+as a dead end.
+
+## Safety
+
+`--add-dir` confines the file tools to the agent home and the task folder.
+**Bash is off by default** (`NEON_TASK_BASH=1` to enable) because Bash is not
+confined by that — with a shell, "sandboxed" stops being true. Nothing that
+leaves the house: no mail, messages, posting, purchases, or calendar writes,
+stated as a boundary the task prompt cannot negotiate away.
+
+Note the activity line reports tools *attempted*, not permitted: a denied Bash
+call still shows as "running a command" for a moment.
+
+## Verified end to end
+
+Smoke test (no network): "write a haiku to haiku.txt" → 19 s, file written,
+spoken result. Real test: "we have eggs, spinach, ricotta, pasta and a lemon,
+find a real 30-minute recipe, check the timing, save the steps" → 95 s, six
+tool calls across search and fetch, `recipe.md` written with a timing check,
+and this as the spoken answer:
+
+> Lemon ricotta spinach pasta with a fried egg on top — real 25-minute recipe,
+> checks out for 30. Boil pasta, wilt the spinach in with it at the end, stir
+> together with ricotta, lemon juice and zest and a little pasta water, then
+> top each bowl with a fried egg so the yolk runs into the sauce. Full
+> ingredients and steps are saved in recipe.md in the task folder.
+
+`NEON_TASK_TEST="title=instructions"` runs one task to completion and prints
+what Neon would have been told, without a voice session.
 
 ## The kitchen timer is not a task
 
@@ -82,12 +155,18 @@ waiting for.
 
 ## Tool surface
 
+`start_task(title, instructions)` · `list_tasks()` · `check_task(id)` ·
+`cancel_task(id)`.
+
 Cap is **5 active** (`TaskStore.maxActive`) — five things running in a kitchen
 is already more than anyone can hold in their head. Over the cap, `add` returns
-nil so the model can relay a refusal rather than failing silently. The task
-tools themselves (`start_task`/`list_tasks`/`check_task`/`cancel_task`) land
-with the runner; only the timer tools are declared today, to keep the tool list
-short.
+nil and Neon relays a refusal rather than failing silently.
+
+The family knows Claude is what's behind this, so "have Claude look into that"
+is a normal thing to say and the prompt lets her mention it naturally — but a
+returning result is just the answer, never "Claude says". The requester is
+passed through from voice ID when there is one ("Requested by: sounds like
+Nick"), so the agent can pitch an answer at whoever asked.
 
 ## UI
 

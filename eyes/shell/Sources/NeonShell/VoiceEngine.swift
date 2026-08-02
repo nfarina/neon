@@ -78,6 +78,29 @@ let recallToolDescription = """
     answer would be better if you checked first. Query with the words you'd \
     expect the memory to contain.
     """
+let startTaskToolName = "start_task"
+let startTaskToolDescription = """
+    Hand work to Claude Code, which runs in the background while you carry on \
+    talking: research, comparisons, anything that takes longer than a \
+    sentence or needs the web. You'll be told when it finishes and can say so \
+    then. Give the full request in `instructions` — Claude can't ask you \
+    anything once it starts, so include everything it needs, including who \
+    it's for and any preference you know about. Don't use it for things you \
+    can just answer.
+    """
+let listTasksToolName = "list_tasks"
+let listTasksToolDescription = """
+    What background tasks are running, what each one is doing right now, and \
+    what any finished ones came back with.
+    """
+let checkTaskToolName = "check_task"
+let checkTaskToolDescription = """
+    Detail on one task by id — its current activity, or its result if it's done.
+    """
+let cancelTaskToolName = "cancel_task"
+let cancelTaskToolDescription = """
+    Stop a running background task by id.
+    """
 let timerCheckToolName = "check_timer"
 let timerCheckToolDescription = """
     How much time is left on the kitchen timer, or whether it's ringing now.
@@ -196,6 +219,30 @@ struct GeminiEngine: VoiceEngine {
                                           "description": "Words you'd expect in the memory — a name, a topic"],
                             ],
                             "required": ["query"],
+                         ]],
+                        ["name": startTaskToolName, "description": startTaskToolDescription,
+                         "parameters": [
+                            "type": "OBJECT",
+                            "properties": [
+                                "title": ["type": "STRING",
+                                          "description": "2-4 words for the screen — \"recipe ideas\", \"racket prices\""],
+                                "instructions": ["type": "STRING",
+                                                 "description": "The complete request, self-contained"],
+                            ],
+                            "required": ["title", "instructions"],
+                         ]],
+                        ["name": listTasksToolName, "description": listTasksToolDescription],
+                        ["name": checkTaskToolName, "description": checkTaskToolDescription,
+                         "parameters": [
+                            "type": "OBJECT",
+                            "properties": ["id": ["type": "STRING"]],
+                            "required": ["id"],
+                         ]],
+                        ["name": cancelTaskToolName, "description": cancelTaskToolDescription,
+                         "parameters": [
+                            "type": "OBJECT",
+                            "properties": ["id": ["type": "STRING"]],
+                            "required": ["id"],
                          ]],
                         ["name": timerCheckToolName, "description": timerCheckToolDescription],
                         ["name": timerStopToolName, "description": timerStopToolDescription],

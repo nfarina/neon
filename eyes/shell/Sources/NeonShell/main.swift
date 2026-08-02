@@ -643,6 +643,31 @@ if let wav = ProcessInfo.processInfo.environment["NEON_OWW_TEST"] {
     exit(0)
 }
 
+// Task runner check: NEON_TASK_TEST="title=instructions" runs one task to
+// completion and prints what Neon would have been told, no app launch.
+if let spec = ProcessInfo.processInfo.environment["NEON_TASK_TEST"] {
+    let parts = spec.split(separator: "=", maxSplits: 1)
+    guard parts.count == 2 else { print("format: title=instructions"); exit(1) }
+    var done = false
+    TaskStore.shared.onChanged = { tasks in
+        if let t = tasks.last, t.isActive, let d = t.detail { print("  … \(d)") }
+    }
+    TaskStore.shared.onFinished = { task in
+        print("\n\(task.status.rawValue) in \(Int(Date().timeIntervalSince(task.createdAt)))s")
+        print("she would say → \(task.detail ?? "(nothing)")")
+        print("\nannounce note → \(task.completionNote)")
+        done = true
+    }
+    switch TaskRunner.shared.start(title: String(parts[0]),
+                                   instructions: String(parts[1]),
+                                   requester: "sounds like Nick") {
+    case .success(let t): print("started \(t.id) — \(TaskRunner.home.path)/tasks/\(t.id)")
+    case .failure(let r): print("refused: \(r.reason)"); exit(1)
+    }
+    while !done { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
+    exit(0)
+}
+
 // Voice enrolment from the live mic: NEON_VOICEID_RECORD=Sam
 if let name = ProcessInfo.processInfo.environment["NEON_VOICEID_RECORD"] {
     VoiceID.recordAndEnrol(name: name)
