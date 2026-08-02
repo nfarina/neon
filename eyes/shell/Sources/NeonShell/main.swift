@@ -411,6 +411,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         webView.evaluateJavaScript("window.neon && neon.tasks(\(json))")
     }
 
+    /// Who does the wake utterance sound like? Uses whatever audio the wake
+    /// carried — the flushed utterance, or the ring back to the detection.
+    private func speakerHint(prelude: Data?, from: Date?) -> String? {
+        guard VoiceID.shared.isAvailable, !VoiceID.shared.profiles.isEmpty else { return nil }
+        let pcm = prelude ?? AudioRing.shared.audio(since: from ?? Date().addingTimeInterval(-3))
+        guard pcm.count > 16000 else { return nil }   // under half a second
+        let samples: [Float] = pcm.withUnsafeBytes {
+            $0.bindMemory(to: Int16.self).map { Float($0) }
+        }
+        return VoiceID.shared.describe(samples)
+    }
+
     private func pushTimer(_ t: KitchenTimer) {
         var obj: [String: Any] = ["ringing": t.ringing, "label": t.label]
         if t.dueAt != nil { obj["remaining"] = Int(t.remaining) }
@@ -555,6 +567,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                    preludeFrom: Date? = nil) {
         guard voiceSession == nil else { return }
         NSLog("Neon: starting voice session")
+        // ~28 ms, against a socket connect of roughly a second — cheap enough
+        // to resolve before the session opens rather than a turn late.
+        let hint = speakerHint(prelude: prelude, from: preludeFrom)
+        if let hint { logEvent("wake", hint) }
         // The wake listener keeps running through the session — AudioHub fans
         // the mic out to both, and echo cancellation keeps Neon's own voice
         // out of it. No recognition-restart dead zone at session end, so she
@@ -562,7 +578,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         webView.evaluateJavaScript("window.neon && neon.hold(true)")
         let session = VoiceSession(engine: makeEngine(providerName),
                                    firstUtterance: command, preludeAudio: prelude,
-                                   preludeFrom: preludeFrom)
+                                   preludeFrom: preludeFrom, speakerHint: hint)
         session.onAmplitude = { [weak self] amp in
             self?.webView.evaluateJavaScript("window.neon && neon.speaking(\(amp))")
         }
@@ -624,6 +640,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // a 16 kHz mono WAV and prints scores, no app launch.
 if let wav = ProcessInfo.processInfo.environment["NEON_OWW_TEST"] {
     OpenWakeListener.offlineTest(wavPath: wav)
+    exit(0)
+}
+
+// Voice enrolment from the live mic: NEON_VOICEID_RECORD=Sam
+if let name = ProcessInfo.processInfo.environment["NEON_VOICEID_RECORD"] {
+    VoiceID.recordAndEnrol(name: name)
+    exit(0)
+}
+
+// Voice enrolment from files: NEON_VOICEID_ENROL="Nick=a.wav,b.wav"
+if let spec = ProcessInfo.processInfo.environment["NEON_VOICEID_ENROL"] {
+    let parts = spec.split(separator: "=", maxSplits: 1)
+    guard parts.count == 2 else { print("format: Name=clip1.wav,clip2.wav"); exit(1) }
+    let name = String(parts[0])
+    let clips = parts[1].split(separator: ",").compactMap { WavFile.samples(at: String($0)) }
+    guard let profile = VoiceID.shared.enrol(name: name, clips: clips) else {
+        print("enrolment failed — unreadable clips, or none long enough"); exit(1)
+    }
+    print("enrolled \(profile.name) from \(profile.clips) clip(s)")
+    exit(0)
+}
+
+// Separability check: NEON_VOICEID_TEST=dir scores every WAV in a directory
+// against every enrolled voice. Run this BEFORE building anything on top of
+// speaker ID — twins are the case that decides what's possible.
+if let dir = ProcessInfo.processInfo.environment["NEON_VOICEID_TEST"] {
+    VoiceID.voiceMatrix(dir: dir)
     exit(0)
 }
 

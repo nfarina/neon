@@ -116,13 +116,16 @@ final class VoiceSession: NSObject {
     /// moment (openWakeWord path — the ring keeps recording between the
     /// detection and the socket opening, so nothing said is lost).
     private let preludeFrom: Date?
+    /// Hedged guess at who woke her ("sounds like Nick"), from VoiceID.
+    private let speakerHint: String?
 
     init(engine: VoiceEngine, firstUtterance: String? = nil, preludeAudio: Data? = nil,
-         preludeFrom: Date? = nil) {
+         preludeFrom: Date? = nil, speakerHint: String? = nil) {
         self.engine = engine
         self.firstUtterance = firstUtterance
         self.preludeAudio = preludeAudio
         self.preludeFrom = preludeFrom
+        self.speakerHint = speakerHint
         self.sendFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16, sampleRate: engine.sendSampleRate,
             channels: 1, interleaved: true)!
@@ -157,6 +160,19 @@ final class VoiceSession: NSObject {
         // today, and "what's the weather" needs a city.
         if let here = LocationProvider.shared.promptLine() {
             system += "\n\n\(here)"
+        }
+        // Who woke her, hedged on purpose: this is a guess from a few seconds
+        // of far-field audio, and being confidently wrong about a name is
+        // worse than not knowing.
+        if let speakerHint {
+            system += """
+
+
+                Whoever just spoke \(speakerHint). Use it the way you'd use \
+                recognising a voice — greet them by name if it fits, keep it \
+                to yourself otherwise. Never announce that you identified \
+                them, and drop it if what they say suggests otherwise.
+                """
         }
         MemoryStore.shared.reloadIfChanged()   // a dream may have rewritten it
         // Memory arrives two ways. The digest is what she carries into every
