@@ -38,11 +38,14 @@ final class WakeScoreLog {
         }
     }
 
-    func record(model: String, score: Float, fired: Bool, threshold: Float) {
+    /// `outcome` is WAKE (fired), held (over the bar but inside the refractory
+    /// window after a fire) or miss (under the bar) — only "miss" lines are
+    /// evidence about the threshold.
+    func record(model: String, score: Float, outcome: String, threshold: Float) {
         guard score >= Self.floor else { return }
         let line = String(format: "%@\t%.3f\t%@\tthr %.2f\t%@\n",
                           stamp.string(from: Date()), score,
-                          fired ? "WAKE" : "miss", threshold, model)
+                          outcome, threshold, model)
         queue.async {
             let fm = FileManager.default
             guard let data = line.data(using: .utf8) else { return }

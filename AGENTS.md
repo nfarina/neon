@@ -374,9 +374,18 @@ Work toward Neon's spoken conversation lives under `voice/`.
 - "Hey/ok + neon" (or a fused "henon") wakes from *anywhere* in the current
   utterance — an explicit summons needs no utterance-boundary anchoring;
   bare "neon" stays start-anchored so mentions don't wake her.
-- Personality lives in the VoiceSession system prompt: bright, playful,
-  opinionated, light banter — but never sycophantic or theatrical, no
-  catchphrases (and still no Valorant).
+- Personality lives in the VoiceSession system prompt. Nick reduced it to
+  "Samantha from the movie Her" — a reference does more than a paragraph of
+  adjectives here, since the model already knows the character. Never
+  sycophantic or theatrical, no catchphrases (and still no Valorant).
+- Assistant tics are prompted *out* explicitly: no "anything else I can help
+  with?", no offering further assistance, no recapping the answer just given,
+  and no questions asked merely to keep the turn alive. The goal is talking
+  like a person, and a person is allowed to finish. This also matters
+  mechanically — every trailing offer restarts the 7 s idle clock and drags
+  out a conversation that was over. The bare-name wake greeting follows the
+  same rule ("say hi in a word or two and leave it there") rather than the
+  old "ask what he needs".
 - Household facts (names, ages, interests) live OUTSIDE the repo in
   `~/.config/neon/profile.md`, loaded into the system prompt each session —
   edit that file to teach her about people; keep personal data out of git.
@@ -486,23 +495,35 @@ Work toward Neon's spoken conversation lives under `voice/`.
   Threshold is therefore not a recall/false-accept trade — anything from 0.1 to
   0.95 detects 100%. It only sets tolerance for deliberate near-misses ("hey
   leon", "hey neo"), the only negatives landing near the positives (0.788,
-  0.948, 0.990). `NEON_OWW_THRESHOLD` defaults to **0.4**. It was 0.8 on the
-  offline numbers above, then lowered when the room disagreed: a clear live
-  "hey neon" scored ~0.5, because recorded clips carry none of the reverb,
-  distance, or AEC-processed mic path that the kitchen does. **Trust the room
-  over the eval set** — and note this is the same class of error as trusting
+  0.948, 0.990). `NEON_OWW_THRESHOLD` defaults to **0.2**, arrived at by
+  0.8 → 0.4 → 0.2 as live evidence accumulated in `wake-scores.log`. Recorded
+  clips carry none of the reverb, distance, or AEC-processed mic path that the
+  kitchen does, and **the room disagrees with the eval set**: three clear
+  utterances in a quiet room peaked 0.99, 0.94 and **0.29** (that last one
+  silently failing at 0.4). It is the *spread* a threshold has to survive, and
+  no recorded set shows it — the same class of error as trusting
   `verify_model.py` over `eval_runtime.py`, one layer further out. Lowering
-  was near-free: a 36-utterance negative battery (3 `say` voices, incl. "the
-  neon sign in the window is broken") topped out at 0.009 for ordinary speech,
-  so 0.4 keeps a ~44x margin; the only high scorers were "hey Nia" (0.99) and
-  "hey Neo" (0.83), which already cleared 0.8, so lowering admits no new *kind*
-  of false accept — just more of two confusions worth waking on anyway.
+  stays near-free: a 36-utterance negative battery (3 `say` voices, incl. "the
+  neon sign in the window is broken" and "hey Leon") tops out at 0.004 for
+  ordinary speech, ~50x under the bar. The only negatives that cross 0.2 are
+  "hey Nia" and "hey Neo" — deliberate soundalikes that already cleared 0.8,
+  so lowering admits no new *kind* of false accept, just more of two
+  confusions worth waking on anyway.
+- Scoring is **not deterministic**: `primeBuffers()` seeds the pipeline with
+  random noise, so the same clip re-scored moves — stable at the extremes
+  (a positive held 0.997/0.994/0.993) but wild in the middle ("hey Neo" went
+  0.833 → 0.409 between runs). Never conclude anything from a single score
+  near the bar, and expect some of the live spread above to be this rather
+  than the room.
   **Re-tune whenever the model changes** — 0.35 suited v1, 0.4 suited v3, and
   neither meant anything for v4. Scores above 0.15 that don't fire are logged
   as "near miss" events (max one a second); reading those from the room is how
   you tell a threshold problem from a model problem. Every score ≥0.05, fired
   or not, also appends to `~/.config/neon/wake-scores.log` (timestamp, score,
-  WAKE/miss, threshold in force, model; tail-trimmed at 1 MB) — the page's
+  outcome, threshold in force, model; tail-trimmed at 1 MB). Outcome is
+  WAKE / **held** (over the bar but inside the 2 s refractory window after a
+  fire) / miss — only `miss` lines are evidence about the threshold, since the
+  tail of a successful wake otherwise reads as a stack of failures. The page's
   event log dies with the app, and a threshold deserves a distribution rather
   than a remembered number. Caveat throughout: 12 positives and 8 negatives
   means one clip moves detection 8 points and false-accepts 12.5, so directions

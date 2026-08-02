@@ -74,18 +74,28 @@ final class OpenWakeListener {
     /// end of the kitchen somewhere to land. `wake-scores.log` records what
     /// actually happens; tune from that, not from this comment.
     ///
+    /// It then went to 0.2, from that log rather than from any eval: live
+    /// wakes turn out to *vary enormously* — three clear utterances in a quiet
+    /// room peaked at 0.99, 0.94 and 0.29, the last one silently failing. The
+    /// spread, not the average, is what a threshold has to survive, and no
+    /// recorded set shows it. 0.2 still sits ~20x over the measured
+    /// ordinary-speech ceiling (0.009), which is margin enough given that the
+    /// near neighbours are soundalikes we'd happily wake on.
+    ///
     /// Do not tune this from `verify_model.py`. Its Python `predict_clip`
     /// starts from zero-primed buffers, and zeros make any speech score high
     /// while they drain — on v3 it reported 91.7% where this path scored 58.3%.
     /// The two disagree by enough to pick the wrong threshold.
     static let threshold: Float = {
         ProcessInfo.processInfo.environment["NEON_OWW_THRESHOLD"]
-            .flatMap(Float.init) ?? 0.4
+            .flatMap(Float.init) ?? 0.2
     }()
     /// Scores that came close but didn't fire, for tuning from the room.
     /// Reported at most once a second so a long sentence can't flood the log.
+    /// The floor has to stay well under `threshold` or near misses stop being
+    /// visible in the event log at exactly the moment they start mattering.
     var onNearMiss: (Float) -> Void = { _ in }
-    private static let nearMissFloor: Float = 0.15
+    private static let nearMissFloor: Float = 0.05
     private var lastNearMiss = Date.distantPast
 
     // MARK: - Setup
@@ -222,11 +232,17 @@ final class OpenWakeListener {
             let chunk = Array(samples.prefix(1280))
             samples.removeFirst(1280)
             guard let score = process(chunk) else { continue }
-            let fired = score > Self.threshold && Date().timeIntervalSince(lastFire) > 2
+            let over = score > Self.threshold
+            let fired = over && Date().timeIntervalSince(lastFire) > 2
             // Persisted for threshold tuning — the page's event log dies with
-            // the app, and one remembered number is not a distribution.
+            // the app, and one remembered number is not a distribution. A
+            // score over the bar that lost to the 2 s refractory window is
+            // logged "held", not "miss": the tail of one wake looks exactly
+            // like a stack of failures otherwise, which makes the file read
+            // as if the threshold were far too high.
             WakeScoreLog.shared.record(model: wakeName, score: score,
-                                       fired: fired, threshold: Self.threshold)
+                                       outcome: fired ? "WAKE" : (over ? "held" : "miss"),
+                                       threshold: Self.threshold)
             if fired {
                 lastFire = Date()
                 dbg("oww: DETECTED \(wakeName) score=\(score)")
