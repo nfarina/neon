@@ -54,18 +54,25 @@ final class OpenWakeListener {
     /// hot they run — and calibrated *through this pipeline*, not the training
     /// one. Revisit it whenever `wake/models` changes.
     ///
-    /// 0.8 suits v4 (2026-08-02, layer_size 192), measured by
-    /// `wake/scripts/eval_runtime.py` on 12 held-out recordings of Nick with a
-    /// 4 s noise lead-in. That model separates far more cleanly than its
-    /// predecessors: every true positive lands 0.968–0.998 while ordinary
-    /// speech lands ≤0.018, two orders of magnitude apart. So the threshold is
-    /// not trading recall against false accepts across that gap — anything from
-    /// 0.1 to 0.95 detects 100%. It is only deciding how much of a deliberate
-    /// near-miss ("hey leon", "hey neo") to tolerate; those are the only
-    /// negatives that land anywhere near the positives. 0.8 sits comfortably
-    /// below the lowest observed true positive while rejecting all but the two
-    /// closest confusions. Raising it toward 0.95 rejects one more at the cost
-    /// of headroom the 12-clip sample cannot justify spending.
+    /// 0.4 for v4 (2026-08-02, layer_size 192). The offline picture argued for
+    /// 0.8: `wake/scripts/eval_runtime.py` on 12 held-out recordings put every
+    /// true positive at 0.968–0.998 and ordinary speech at ≤0.018. But live in
+    /// the kitchen a clear "hey neon" was observed scoring ~0.5 — recorded
+    /// clips do not carry the room's reverb, the speaker's distance, or the
+    /// AEC-processed mic path, and those cost real score. Trust the room over
+    /// the eval set.
+    ///
+    /// Lowering is close to free because of *what* sits near the boundary. A
+    /// 36-utterance negative battery through this pipeline (3 voices, incl.
+    /// "the neon sign in the window is broken") topped out at 0.009 for
+    /// ordinary speech; the only things scoring high were deliberate
+    /// soundalikes — "hey Nia" (0.99) and "hey Neo" (0.83) — and both already
+    /// cleared 0.8, so lowering admits no new *kind* of false accept, just more
+    /// instances of two confusions we arguably want to wake on anyway ("Neo"
+    /// is Neon's old name, "Nia" is already a listed misheard variant).
+    /// 0.4 therefore keeps a ~44x margin over real speech while giving the far
+    /// end of the kitchen somewhere to land. `wake-scores.log` records what
+    /// actually happens; tune from that, not from this comment.
     ///
     /// Do not tune this from `verify_model.py`. Its Python `predict_clip`
     /// starts from zero-primed buffers, and zeros make any speech score high
@@ -73,7 +80,7 @@ final class OpenWakeListener {
     /// The two disagree by enough to pick the wrong threshold.
     static let threshold: Float = {
         ProcessInfo.processInfo.environment["NEON_OWW_THRESHOLD"]
-            .flatMap(Float.init) ?? 0.8
+            .flatMap(Float.init) ?? 0.4
     }()
     /// Scores that came close but didn't fire, for tuning from the room.
     /// Reported at most once a second so a long sentence can't flood the log.
@@ -215,7 +222,12 @@ final class OpenWakeListener {
             let chunk = Array(samples.prefix(1280))
             samples.removeFirst(1280)
             guard let score = process(chunk) else { continue }
-            if score > Self.threshold, Date().timeIntervalSince(lastFire) > 2 {
+            let fired = score > Self.threshold && Date().timeIntervalSince(lastFire) > 2
+            // Persisted for threshold tuning — the page's event log dies with
+            // the app, and one remembered number is not a distribution.
+            WakeScoreLog.shared.record(model: wakeName, score: score,
+                                       fired: fired, threshold: Self.threshold)
+            if fired {
                 lastFire = Date()
                 dbg("oww: DETECTED \(wakeName) score=\(score)")
                 let name = wakeName

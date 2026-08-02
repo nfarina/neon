@@ -486,12 +486,25 @@ Work toward Neon's spoken conversation lives under `voice/`.
   Threshold is therefore not a recall/false-accept trade — anything from 0.1 to
   0.95 detects 100%. It only sets tolerance for deliberate near-misses ("hey
   leon", "hey neo"), the only negatives landing near the positives (0.788,
-  0.948, 0.990). `NEON_OWW_THRESHOLD` defaults to **0.8**: under every observed
-  true positive, over all but the two closest confusions. **Re-tune whenever the
-  model changes** — 0.35 suited v1, 0.4 suited v3, and neither means anything
-  for v4. Scores above 0.15 that don't fire are logged as "near miss" events
-  (max one a second); reading those from the room is how you tell a threshold
-  problem from a model problem. Caveat throughout: 12 positives and 8 negatives
+  0.948, 0.990). `NEON_OWW_THRESHOLD` defaults to **0.4**. It was 0.8 on the
+  offline numbers above, then lowered when the room disagreed: a clear live
+  "hey neon" scored ~0.5, because recorded clips carry none of the reverb,
+  distance, or AEC-processed mic path that the kitchen does. **Trust the room
+  over the eval set** — and note this is the same class of error as trusting
+  `verify_model.py` over `eval_runtime.py`, one layer further out. Lowering
+  was near-free: a 36-utterance negative battery (3 `say` voices, incl. "the
+  neon sign in the window is broken") topped out at 0.009 for ordinary speech,
+  so 0.4 keeps a ~44x margin; the only high scorers were "hey Nia" (0.99) and
+  "hey Neo" (0.83), which already cleared 0.8, so lowering admits no new *kind*
+  of false accept — just more of two confusions worth waking on anyway.
+  **Re-tune whenever the model changes** — 0.35 suited v1, 0.4 suited v3, and
+  neither meant anything for v4. Scores above 0.15 that don't fire are logged
+  as "near miss" events (max one a second); reading those from the room is how
+  you tell a threshold problem from a model problem. Every score ≥0.05, fired
+  or not, also appends to `~/.config/neon/wake-scores.log` (timestamp, score,
+  WAKE/miss, threshold in force, model; tail-trimmed at 1 MB) — the page's
+  event log dies with the app, and a threshold deserves a distribution rather
+  than a remembered number. Caveat throughout: 12 positives and 8 negatives
   means one clip moves detection 8 points and false-accepts 12.5, so directions
   are reliable and precision is not — more holdout recordings are the cheapest
   way to sharpen every number here. Pipeline
