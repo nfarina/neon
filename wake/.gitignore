@@ -1,5 +1,19 @@
-# Training inputs and intermediates — large and fully reproducible from the
-# pipeline. Only wake/models/ ships. See README.md.
-data/
+# Training inputs and intermediates. The corpora are large and re-downloadable;
+# only wake/models/ ships. See README.md for the pipeline, data/README.md for
+# what lives in data/.
+#
+# data/* rather than data/ so the negations below work: git does not descend
+# into an ignored directory, so a negation under `data/` would never match.
+data/*
+!data/README.md
+
+# Recordings are committed. A few MB each, and unlike the corpora they cannot
+# be regenerated — my_voice/ is the highest-value input the pipeline has, and
+# ab_jarvis/ is the control set for comparing against openWakeWord's pretrained
+# model on the same voice, mic and room.
+!data/my_voice/
+!data/ab_jarvis/
+
 output/
 logs/
+__pycache__/

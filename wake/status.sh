@@ -26,17 +26,35 @@ bar() { # bar <done> <total> <width>
 
 count() { ls "$1" 2>/dev/null | wc -l | tr -d ' '; }
 
-# Files/sec, measured across the newest N files in a directory.
+# Generation progress counts only Piper's clips. Injected myvoice_* copies would
+# otherwise push the bars past 100% and make a finished run look overshot.
+count_generated() { ls "$1" 2>/dev/null | grep -vc '^myvoice_' || echo 0; }
+
+# Files/sec over the last WINDOW seconds only. Measuring across "the newest N
+# files" instead would silently span any idle gap — after a crash and restart
+# that reads as a near-zero rate and a nonsense ETA.
+WINDOW=900
 rate_of() {
-  local d=$1 n newest oldest span
-  local files; files=$(ls -t "$d" 2>/dev/null | head -300)
-  n=$(printf '%s\n' "$files" | grep -c . )
-  [ "$n" -lt 5 ] && { echo 0; return; }
-  newest=$(stat -f %m "$d/$(printf '%s\n' "$files" | head -1)" 2>/dev/null || echo 0)
-  oldest=$(stat -f %m "$d/$(printf '%s\n' "$files" | tail -1)" 2>/dev/null || echo 0)
-  span=$(( newest - oldest ))
-  [ "$span" -le 0 ] && { echo 0; return; }
-  echo "scale=3; ($n - 1) / $span" | bc
+  local d=$1 now cutoff n=0 oldest span mt
+  now=$(date +%s); cutoff=$(( now - WINDOW )); oldest=$now
+
+  local files; files=$(ls -t "$d" 2>/dev/null | head -600)
+  [ -z "$files" ] && { echo 0; return; }
+
+  local paths=()
+  while IFS= read -r f; do [ -n "$f" ] && paths+=("$d/$f"); done <<< "$files"
+  [ ${#paths[@]} -eq 0 ] && { echo 0; return; }
+
+  while read -r mt; do
+    if [ -n "$mt" ] && [ "$mt" -ge "$cutoff" ]; then
+      n=$(( n + 1 ))
+      [ "$mt" -lt "$oldest" ] && oldest=$mt
+    fi
+  done < <(stat -f %m "${paths[@]}" 2>/dev/null)
+
+  span=$(( now - oldest ))
+  if [ "$n" -lt 5 ] || [ "$span" -le 0 ]; then echo 0; return; fi
+  echo "scale=3; $n / $span" | bc
 }
 
 human() { # seconds -> "2h 15m"
@@ -65,7 +83,7 @@ show() {
   local total=0 done_all=0 active="" pct
   for spec in "positive_train:$N" "negative_train:$N" "positive_test:$NV" "negative_test:$NV"; do
     local name=${spec%%:*} target=${spec##*:} c
-    c=$(count "$CLIPS/$name")
+    c=$(count_generated "$CLIPS/$name")
     total=$((total + target)); done_all=$((done_all + c))
     [ "$c" -lt "$target" ] && [ -z "$active" ] && [ "$c" -gt 0 ] && active="$CLIPS/$name"
     pct=$(( c * 100 / (target > 0 ? target : 1) ))
@@ -82,7 +100,9 @@ show() {
       local remain eta
       remain=$(( total - done_all ))
       eta=$(echo "scale=0; $remain / $r" | bc)
-      printf '\n  rate %.2f clips/s   eta %s\n' "$r" "$(human "$eta")"
+      printf '\n  rate %.2f clips/s   eta %s   (last %dm)\n' "$r" "$(human "$eta")" $((WINDOW / 60))
+    else
+      printf '\n  rate: measuring (needs a few minutes of output)\n'
     fi
   fi
 
@@ -94,10 +114,22 @@ show() {
   fi
 
   if [ "$stage" = "train" ] && [ -f logs/train.log ]; then
-    local step seq
-    step=$(tr '\r' '\n' < logs/train.log | grep -oE '[0-9]+/[0-9]+ \[' | tail -1 | tr -d ' [')
+    # tqdm already carries both the rate and its own remaining estimate on the
+    # progress line; parsing them beats re-deriving from file mtimes, which is
+    # what the generate stage has to do because it writes no progress line.
+    local tq step seq rate rem
+    tq=$(tr '\r' '\n' < logs/train.log | grep -oE 'Training: +[0-9]+%.*' | tail -1)
+    step=$(printf '%s' "$tq" | grep -oE '[0-9]+/[0-9]+' | head -1)
+    rate=$(printf '%s' "$tq" | grep -oE '[0-9.]+it/s' | tail -1)
+    rem=$(printf '%s' "$tq" | grep -oE '<[0-9:]+' | tr -d '<')
     seq=$(grep -c 'Starting training sequence' logs/train.log 2>/dev/null || echo 0)
-    echo; echo "  train: sequence $seq, step ${step:-0}"
+    echo
+    echo "  train: sequence $seq, step ${step:-0}"
+    if [ -n "${rem:-}" ]; then
+      # Only this sequence. auto_train runs extra short sequences afterwards,
+      # ratcheting negative weight until it hits the false-positive target.
+      echo "         ${rate:-?} — ${rem} left in this sequence (more may follow)"
+    fi
   fi
 
   # ---- voice recordings ----

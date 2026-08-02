@@ -30,6 +30,15 @@
   }
   .modes button[aria-pressed="true"] { border-color: var(--accent); color: var(--text); }
 
+  .micbar { display: flex; gap: .5rem; align-items: center; margin-bottom: 1rem; font-size: .82rem; }
+  .micbar select {
+    flex: 1; min-width: 0; padding: .4rem; border-radius: 8px; font: inherit;
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  }
+  #mic { color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #mic.live { color: var(--ok); }
+  #mic.bad { color: var(--hot); }
+
   .stage {
     background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
     padding: 1.5rem; text-align: center; margin-bottom: 1rem;
@@ -63,18 +72,23 @@
 </head>
 <body>
 <main>
-  <h1>hey neon — voice capture</h1>
-  <p class="sub">Recordings save straight into the project. Aim for <b>40+</b> positives across varied
+  <h1 id="title">voice capture</h1>
+  <p class="sub">Saving to <code id="dest">…</code>. Aim for <b>40+</b> positives across varied
      distance, volume and pace, plus ~15 negatives.</p>
 
   <div class="modes">
-    <button id="m-pos" aria-pressed="true">Positive — "hey neon"</button>
+    <button id="m-pos" aria-pressed="true">Positive</button>
     <button id="m-neg" aria-pressed="false">Negative — everything else</button>
+  </div>
+
+  <div class="micbar">
+    <select id="dev" title="input device"></select>
+    <span id="mic">mic: not started</span>
   </div>
 
   <div class="stage">
     <p class="prompt" id="prompt">hey neon</p>
-    <p class="hint" id="hint">Press space to record 2 seconds</p>
+    <p class="hint" id="hint">Press space, wait for "speak now", then say it</p>
     <div class="meter"><i id="level"></i></div>
     <button id="go">Record <kbd>space</kbd></button>
   </div>
@@ -88,27 +102,24 @@
 
 <script>
 const DUR = 2.0, SR = 16000;
+// Delay between the trigger and the start of capture. The spacebar press and
+// its release are sharp broadband transients; if they land in the clip they sit
+// at the start of every positive, and none of the synthetic clips have them —
+// so "click" would correlate with real speech and the model could key on it.
+const PREROLL = 650;
 
-// Cycling guidance so the set covers varied delivery rather than 40 identical reads.
-const POS_HINTS = [
-  "Normal speaking voice, arm's length from the mic",
-  "A bit quieter, like you're not trying hard",
-  "From across the room",
-  "Slightly faster than normal",
-  "Slower, more deliberate",
-  "Turned away from the mic",
-  "Casual, mid-sentence energy",
-  "A little louder than normal",
-];
-// Near-misses matter most: they teach the model where the phrase boundary is.
-const NEG_PROMPTS = [
-  "hey leon", "hey neo", "hey venn", "he owns", "hey", "neon",
-  "hey there", "any on", "hey NEAT-o", "say anything for a few seconds",
-  "read this sentence out loud normally", "hey Siri", "okay Google", "hey Jarvis",
-  "knee on", "hey Nathan",
-];
+// The phrase, its delivery hints, and its near-miss prompts come from the
+// server (`record_server.py --phrase`), so one capture path serves any wake
+// phrase. Keeping it one page rather than a fork matters for the hey_jarvis
+// A/B: if the control were recorded through a copy, a difference in the result
+// could be the page rather than the model. Filled in by loadConfig().
+let PHRASE = "…";
+let POS_HINTS = ["loading…"];
+let NEG_PROMPTS = ["loading…"];
 
-let mode = "positive", recording = false, ctx, stream, node, chunks = [], srcRate;
+const MIN_PEAK = 0.012;   // ~-38 dBFS; normal speech at arm's length clears this easily
+let mode = "positive", recording = false, armed = false;
+let ctx, stream, node, srcNode, chunks = [], srcRate, livePeak = 0;
 const $ = id => document.getElementById(id);
 
 function setMode(m) {
@@ -122,10 +133,22 @@ function setMode(m) {
 $("m-pos").onclick = () => setMode("positive");
 $("m-neg").onclick = () => setMode("negative");
 
+async function loadConfig() {
+  const c = await (await fetch("/config")).json();
+  PHRASE = c.phrase;
+  POS_HINTS = c.posHints;
+  NEG_PROMPTS = c.negPrompts;
+  document.title = `${PHRASE} — voice capture`;
+  $("title").textContent = `${PHRASE} — voice capture`;
+  $("m-pos").textContent = `Positive — "${PHRASE}"`;
+  $("dest").textContent = c.dir;
+  nextPrompt();
+}
+
 let posIdx = 0, negIdx = 0;
 function nextPrompt() {
   if (mode === "positive") {
-    $("prompt").textContent = "hey neon";
+    $("prompt").textContent = PHRASE;
     $("hint").textContent = POS_HINTS[posIdx++ % POS_HINTS.length];
   } else {
     $("prompt").textContent = NEG_PROMPTS[negIdx % NEG_PROMPTS.length];
@@ -134,36 +157,80 @@ function nextPrompt() {
   }
 }
 
-async function initAudio() {
-  if (ctx) return;
-  stream = await navigator.mediaDevices.getUserMedia({
-    // Keep the browser's DSP out of it: we want the raw signal, and the
-    // training pipeline applies its own noise/reverb/gain augmentation.
-    audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-  });
-  ctx = new AudioContext();
-  srcRate = ctx.sampleRate;
-  const workletSrc = `
-    class Rec extends AudioWorkletProcessor {
-      process(inputs) {
-        const ch = inputs[0][0];
-        if (ch) this.port.postMessage(new Float32Array(ch));
-        return true;
-      }
-    }
-    registerProcessor('rec', Rec);`;
-  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([workletSrc], {type: "text/javascript"})));
-  node = new AudioWorkletNode(ctx, "rec");
-  node.port.onmessage = e => {
-    const buf = e.data;
-    if (recording) chunks.push(buf);
-    let peak = 0;
-    for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]));
-    $("level").style.width = Math.min(100, peak * 140) + "%";
-  };
-  ctx.createMediaStreamSource(stream).connect(node);
-  node.connect(ctx.destination);   // keep the graph pulling; worklet emits silence
+function micStatus(text, cls = "") { const m = $("mic"); m.textContent = "mic: " + text; m.className = cls; }
+
+function onAudio(e) {
+  const buf = e.data;
+  if (recording) chunks.push(buf);
+  let peak = 0;
+  for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]));
+  livePeak = Math.max(livePeak * 0.88, peak);          // brief decay so the bar is readable
+  $("level").style.width = Math.min(100, livePeak * 140) + "%";
 }
+
+async function listDevices() {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput");
+  const cur = stream?.getAudioTracks()[0]?.getSettings().deviceId;
+  const sel = $("dev");
+  sel.innerHTML = "";
+  devs.forEach((d, i) => {
+    const o = document.createElement("option");
+    o.value = d.deviceId;
+    o.textContent = d.label || `input ${i + 1}`;
+    if (d.deviceId === cur) o.selected = true;
+    sel.append(o);
+  });
+}
+
+async function initAudio(deviceId) {
+  if (ctx && !deviceId) {
+    // An AudioContext can come up (or fall back) to "suspended", in which case
+    // the worklet never runs and every capture is digital silence.
+    if (ctx.state !== "running") await ctx.resume();
+    return;
+  }
+  if (stream) stream.getTracks().forEach(t => t.stop());
+
+  // Keep the browser's DSP out of it: we want the raw signal, and the training
+  // pipeline applies its own noise/reverb/gain augmentation.
+  const audio = { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  if (deviceId) audio.deviceId = { exact: deviceId };
+  stream = await navigator.mediaDevices.getUserMedia({ audio });
+
+  if (!ctx) {
+    ctx = new AudioContext();
+    const workletSrc = `
+      class Rec extends AudioWorkletProcessor {
+        process(inputs) {
+          const ch = inputs[0][0];
+          if (ch) this.port.postMessage(new Float32Array(ch));
+          return true;
+        }
+      }
+      registerProcessor('rec', Rec);`;
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([workletSrc], { type: "text/javascript" })));
+    node = new AudioWorkletNode(ctx, "rec");
+    node.port.onmessage = onAudio;
+    node.connect(ctx.destination);   // keep the graph pulling; worklet emits silence
+  }
+  if (ctx.state !== "running") await ctx.resume();
+
+  srcRate = ctx.sampleRate;
+  if (srcNode) srcNode.disconnect();
+  srcNode = ctx.createMediaStreamSource(stream);
+  srcNode.connect(node);
+
+  await listDevices();
+  const track = stream.getAudioTracks()[0];
+  micStatus(`${track.label || "default"} · ${srcRate} Hz`, "live");
+}
+
+$("dev").onchange = e =>
+  initAudio(e.target.value).catch(err => micStatus("error — " + err.message, "bad"));
+
+// Try to bring the mic up immediately so the level bar can be checked before
+// recording anything; if permission needs a gesture, the first press handles it.
+initAudio().catch(() => micStatus("press record to enable", ""));
 
 async function resample(data, from, to) {
   if (from === to) return data;
@@ -192,23 +259,38 @@ function toWav(samples, rate) {
 }
 
 async function record() {
-  if (recording) return;
+  if (recording || armed) return;
   try { await initAudio(); }
   catch (e) { $("status").innerHTML = '<span class="err">mic blocked: ' + e.message + '</span>'; return; }
 
+  // Pre-roll: let the trigger transient decay before we start collecting.
+  armed = true;
+  $("go").textContent = "get ready…";
+  $("status").textContent = "";
+  await new Promise(r => setTimeout(r, PREROLL));
+
   chunks = []; recording = true;
-  $("go").dataset.rec = "1"; $("go").textContent = "● recording";
+  $("go").dataset.rec = "1"; $("go").textContent = "● speak now";
   await new Promise(r => setTimeout(r, DUR * 1000));
-  recording = false;
+  recording = false; armed = false;
   $("go").dataset.rec = "0"; $("go").innerHTML = 'Record <kbd>space</kbd>';
 
   let total = 0; for (const c of chunks) total += c.length;
+  if (total === 0) {
+    $("status").innerHTML = '<span class="err">no audio captured — wrong input device? '
+      + 'try the selector above</span>';
+    micStatus("delivering no samples", "bad");
+    return;
+  }
   const flat = new Float32Array(total);
   let off = 0; for (const c of chunks) { flat.set(c, off); off += c.length; }
 
   let peak = 0; for (let i = 0; i < flat.length; i++) peak = Math.max(peak, Math.abs(flat[i]));
-  if (peak < 0.012) {
-    $("status").innerHTML = '<span class="err">too quiet — not saved</span>';
+  if (peak < MIN_PEAK) {
+    const db = peak > 0 ? (20 * Math.log10(peak)).toFixed(0) + " dBFS" : "digital silence";
+    $("status").innerHTML = `<span class="err">too quiet — peak ${db}, need ${
+      (20 * Math.log10(MIN_PEAK)).toFixed(0)} dBFS. Watch the bar while you speak;
+      if it never moves, pick a different input above.</span>`;
     return;
   }
 
@@ -251,6 +333,7 @@ addEventListener("keydown", e => {
   if (e.code === "Space" && !e.repeat && e.target.tagName !== "BUTTON") { e.preventDefault(); record(); }
 });
 setMode("positive");
+loadConfig().catch(e => { $("hint").textContent = "could not load config: " + e.message; });
 </script>
 </body>
 </html>

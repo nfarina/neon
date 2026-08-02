@@ -50,13 +50,30 @@ final class OpenWakeListener {
     private var lastFire = Date.distantPast
     private var startTimer: Timer?
     /// Detection threshold, tunable without a rebuild
-    /// (`NEON_OWW_THRESHOLD=0.5`). 0.35 suits the current hey_neon model,
-    /// whose true positives plateau around 0.92 while negatives sit at
-    /// ~0.001 — the headroom below the peak is free, so the lower bar buys
-    /// range at the far end of the kitchen without inviting false accepts.
+    /// (`NEON_OWW_THRESHOLD=0.5`). Calibrated per model — models differ in how
+    /// hot they run — and calibrated *through this pipeline*, not the training
+    /// one. Revisit it whenever `wake/models` changes.
+    ///
+    /// 0.8 suits v4 (2026-08-02, layer_size 192), measured by
+    /// `wake/scripts/eval_runtime.py` on 12 held-out recordings of Nick with a
+    /// 4 s noise lead-in. That model separates far more cleanly than its
+    /// predecessors: every true positive lands 0.968–0.998 while ordinary
+    /// speech lands ≤0.018, two orders of magnitude apart. So the threshold is
+    /// not trading recall against false accepts across that gap — anything from
+    /// 0.1 to 0.95 detects 100%. It is only deciding how much of a deliberate
+    /// near-miss ("hey leon", "hey neo") to tolerate; those are the only
+    /// negatives that land anywhere near the positives. 0.8 sits comfortably
+    /// below the lowest observed true positive while rejecting all but the two
+    /// closest confusions. Raising it toward 0.95 rejects one more at the cost
+    /// of headroom the 12-clip sample cannot justify spending.
+    ///
+    /// Do not tune this from `verify_model.py`. Its Python `predict_clip`
+    /// starts from zero-primed buffers, and zeros make any speech score high
+    /// while they drain — on v3 it reported 91.7% where this path scored 58.3%.
+    /// The two disagree by enough to pick the wrong threshold.
     static let threshold: Float = {
         ProcessInfo.processInfo.environment["NEON_OWW_THRESHOLD"]
-            .flatMap(Float.init) ?? 0.35
+            .flatMap(Float.init) ?? 0.8
     }()
     /// Scores that came close but didn't fire, for tuning from the room.
     /// Reported at most once a second so a long sentence can't flood the log.

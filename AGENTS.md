@@ -198,15 +198,25 @@ Work toward Neon's spoken conversation lives under `voice/`.
   Xcode already has one, and it is just as stable — no cert to generate or
   trust), and only then falls back to ad-hoc with a warning.
 - The wake-model training pipeline lives in `wake/` (moved into the repo
-  August 1, 2026, from `~/Downloads/hey-neon`): an Apple Container
-  (linux/arm64, CPU-only) port of openWakeWord's `automatic_model_training`
-  notebook, plus `wake/models/hey_neon.onnx` — the v1 weights Neon actually
-  loads. `wake/README.md` documents the stages and, importantly, four
-  upstream bugs this pipeline works around (arm64 dependency swaps, the wrong
-  piper-sample-generator fork, `augmentation_rounds` being a silent no-op, and
-  the built-in TFLite conversion always failing) so they are not rediscovered.
-  `data/`, `output/`, and `logs/` are gitignored — ~19 GB of corpora, clips,
-  and features, all reproducible.
+  August 1, 2026, from `~/Downloads/hey-neon`; the ~20 GB of corpora followed
+  on August 2, so the pipeline and everything it consumes are one inspectable
+  place): an Apple Container (linux/arm64, CPU-only) port of openWakeWord's
+  `automatic_model_training` notebook, plus `wake/models/hey_neon.onnx` — the
+  weights Neon actually loads. `wake/README.md` documents the stages and, more
+  importantly, six upstream bugs this pipeline works around (arm64 dependency
+  swaps, the wrong piper-sample-generator fork, `augmentation_rounds` being a
+  silent no-op, the built-in TFLite conversion always failing, the Piper
+  generation loop leaking memory and getting OOM-killed past ~18k clips, and
+  training needing `--shm-size 4g`) so they are not rediscovered. It closes
+  with "things that quietly ruin a wake word model" — measured failure modes
+  that each looked fine until checked.
+  `data/`, `output/`, and `logs/` are gitignored. The pattern is `data/*` with
+  a `!data/README.md` negation rather than `data/`, because git will not
+  descend into an ignored directory and a negation under it never matches;
+  that README documents what belongs in `data/`. Everything under `data/` is
+  re-downloadable except `data/my_voice/` — Nick's 50 positive and 33 negative
+  recordings, which are not reproducible and are the highest-value asset in
+  the directory.
 - Wake models ship in the app bundle, not `~/.config/neon/oww/` (changed
   August 1, 2026 while setting up a second machine). They are build artifacts
   locked to the pipeline constants in `OpenWakeListener`, so a per-machine
@@ -452,16 +462,39 @@ Work toward Neon's spoken conversation lives under `voice/`.
   other .onnx as the wake model. A file with "neon" in the name always wins, so
   the retired `hey_jarvis_v0.1` trial model can sit in the directory
   without silently taking over (the loader logs which it ignored).
-  `hey_neon.onnx` (first training run, 2026-08-01) is live: 0.92 peak on
-  three `say` voices, 0.001 on negatives — a softer peak than jarvis's
-  0.998, traced to training on 9 of the 604 available voices and none of
-  Nick's own; a retrain is in progress. Detection threshold is
-  `NEON_OWW_THRESHOLD` (default 0.35): true positives plateau near the
-  model's ceiling while negatives sit at ~0.001, so the headroom below the
-  peak is free range at the far end of the kitchen. Scores above 0.15 that
-  don't fire are logged as "near miss" events (max one a second) — reading
-  those from the room is how you tell a threshold problem from a model
-  problem. Pipeline
+  `hey_neon.onnx` is now **v4** (2026-08-02) and essentially matches
+  openWakeWord's pretrained hey_jarvis on Nick's voice: mean 0.989 against
+  jarvis's 0.994, 100% detection on held-out recordings.
+  **`layer_size` was the whole story.** v3 and v4 were trained on byte-identical
+  features; the only change was 32 → 192. openWakeWord's example config calls 32
+  a good default, but their own published model has 316,738 parameters where 32
+  yields 50,401 — and that one line was worth more than the speaker-collapse
+  fix, the trimming fix and 50 real recordings combined (v1 0.478 mean → v3
+  0.597 → v4 0.989). Suspect capacity first on any future phrase.
+  **Measure through this pipeline, not the training one.** `verify_model.py`
+  uses openWakeWord's Python `predict_clip`, which starts from zero-primed
+  buffers, and zeros make any speech score high while they drain — on v3 it
+  claimed 91.7% where this listener scored 58.3%. Numbers here come from
+  `wake/scripts/eval_runtime.py`, which pushes held-out audio through the real
+  Swift path with a 4 s noise lead-in (a bare short clip also under-scores,
+  because the phrase never fills the embedding window). The A/B that settled
+  it: 20 recordings of "hey jarvis" in the same room through the same recorder
+  (`./record.sh jarvis`, kept in `wake/data/ab_jarvis/`) scored 0.994 on the
+  pretrained model while v3 scored 0.55 on "hey neon" — proving the runtime and
+  the measurement were sound and the model was the weak part.
+  v4 separates cleanly: true positives 0.968–0.998, ordinary speech ≤0.018.
+  Threshold is therefore not a recall/false-accept trade — anything from 0.1 to
+  0.95 detects 100%. It only sets tolerance for deliberate near-misses ("hey
+  leon", "hey neo"), the only negatives landing near the positives (0.788,
+  0.948, 0.990). `NEON_OWW_THRESHOLD` defaults to **0.8**: under every observed
+  true positive, over all but the two closest confusions. **Re-tune whenever the
+  model changes** — 0.35 suited v1, 0.4 suited v3, and neither means anything
+  for v4. Scores above 0.15 that don't fire are logged as "near miss" events
+  (max one a second); reading those from the room is how you tell a threshold
+  problem from a model problem. Caveat throughout: 12 positives and 8 negatives
+  means one clip moves detection 8 points and false-accepts 12.5, so directions
+  are reliable and precision is not — more holdout recordings are the cheapest
+  way to sharpen every number here. Pipeline
   details that MATTER (each was a debugged failure): melspectrogram needs a
   480-sample lookback carried across 1280-sample chunks (keep the last 8
   frames per chunk) or the phrase pattern is shredded at seams; buffers

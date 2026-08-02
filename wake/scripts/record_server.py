@@ -1,12 +1,19 @@
-"""Local server for capturing real "hey neon" recordings.
+"""Local server for capturing real wake-phrase recordings.
 
 Serves scripts/recorder.html over http://localhost and writes uploaded clips
-straight into data/my_voice/{positive,negative}/. Serving over localhost (rather
-than opening the file directly) matters: getUserMedia only works in a secure
-context, and file:// is not one.
+straight into a phrase's directory. Serving over localhost (rather than opening
+the file directly) matters: getUserMedia only works in a secure context, and
+file:// is not one.
+
+The phrase is a parameter rather than a second copy of the page, so the capture
+path — pre-roll, level gate, 16 kHz WAV encoding, device selection — stays
+identical between phrases. That matters for the hey_jarvis A/B: if the control
+were recorded through a forked page, any difference in the result could be the
+page rather than the model.
 
 Usage:
     python3 scripts/record_server.py [--port 8642]
+    python3 scripts/record_server.py --phrase "hey jarvis" --voice-dir data/ab_jarvis
 """
 
 import argparse
@@ -20,9 +27,41 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = Path(__file__).resolve().parent / "recorder.html"
-VOICE_DIR = ROOT / "data" / "my_voice"
+VOICE_DIR = ROOT / "data" / "my_voice"      # replaced by --voice-dir in main()
+PHRASE = "hey neon"                          # replaced by --phrase in main()
 KINDS = ("positive", "negative")
 SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+\.wav$")
+
+# Delivery hints, cycled so a batch spans more than one way of saying it.
+POS_HINTS = [
+    "Normal speaking voice, arm's length from the mic",
+    "A bit quieter, like you're not trying hard",
+    "From across the room",
+    "Slightly faster than normal",
+    "Slower, more deliberate",
+    "Turned away from the mic",
+    "Casual, mid-sentence energy",
+    "A little louder than normal",
+]
+
+# Near-misses teach the phrase boundary, so they are phrase-specific.
+NEG_PROMPTS = {
+    "hey neon": [
+        "hey leon", "hey neo", "hey venn", "he owns", "hey", "neon",
+        "hey there", "any on", "hey NEAT-o", "say anything for a few seconds",
+        "read this sentence out loud normally", "hey Siri", "okay Google",
+        "hey Jarvis", "knee on", "hey Nathan",
+    ],
+    "hey jarvis": [
+        "hey Travis", "hey Charles", "hey Harvey", "hey", "Jarvis",
+        "hey there", "hey Siri", "okay Google", "hey Neon",
+        "say anything for a few seconds", "read this sentence out loud",
+    ],
+}
+GENERIC_NEG = [
+    "hey there", "hey Siri", "okay Google", "say anything for a few seconds",
+    "read this sentence out loud normally",
+]
 
 
 def kind_dir(qs) -> Path:
@@ -65,6 +104,13 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path in ("/", "/index.html"):
                 self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+            elif u.path == "/config":
+                self._json({
+                    "phrase": PHRASE,
+                    "posHints": POS_HINTS,
+                    "negPrompts": NEG_PROMPTS.get(PHRASE, GENERIC_NEG),
+                    "dir": str(VOICE_DIR.relative_to(ROOT.parent)),
+                })
             elif u.path == "/list":
                 d = kind_dir(qs)
                 self._json({"files": sorted(p.name for p in d.glob("*.wav"))})
@@ -117,16 +163,24 @@ def extract_wav(body: bytes) -> bytes:
 
 
 def main():
+    global VOICE_DIR, PHRASE
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8642)
+    ap.add_argument("--phrase", default=PHRASE, help='phrase to prompt for')
+    ap.add_argument("--voice-dir", default=None,
+                    help="destination, relative to wake/ (default data/my_voice)")
     args = ap.parse_args()
+
+    PHRASE = args.phrase
+    if args.voice_dir:
+        VOICE_DIR = (ROOT / args.voice_dir).resolve()
 
     for k in KINDS:
         (VOICE_DIR / k).mkdir(parents=True, exist_ok=True)
 
     url = f"http://localhost:{args.port}/"
     counts = {k: len(list((VOICE_DIR / k).glob("*.wav"))) for k in KINDS}
-    print(f"\n  hey-neon voice capture")
+    print(f'\n  voice capture — "{PHRASE}"')
     print(f"  {url}")
     print(f"  saving to {VOICE_DIR}")
     print(f"  existing: {counts['positive']} positive, {counts['negative']} negative")

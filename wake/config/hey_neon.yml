@@ -47,7 +47,14 @@ batch_n_per_class:
   "positive": 50
 
 model_type: "dnn"
-layer_size: 32
+# openWakeWord's example config calls 32 a good default for most phrases, but
+# their own published hey_jarvis has 316,738 parameters against the 50,401 that
+# 32 produces — roughly this layer size. Measured through the Swift runtime on
+# the same voice and room, hey_jarvis scores 0.99 mean where the layer_size-32
+# model scored 0.55, so capacity is the first suspect. Inference cost is
+# irrelevant at this scale: both are a rounding error beside the shared feature
+# extractors that run on every frame regardless.
+layer_size: 192
 
 steps: 50000
 

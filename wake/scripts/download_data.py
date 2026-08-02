@@ -48,7 +48,7 @@ def download_audioset(n_shards: int = 2):
     # The agkphysics/AudioSet repo was restructured (Oct 2025) from .tar files
     # to ~700 MB parquet shards; each bal_train shard holds ~1.6 h of clips.
     out = DATA / "audioset_16k"
-    if out.exists() and len(list(out.glob("*.wav"))) > 1000:
+    if out.exists() and len(list(out.glob("*.wav"))) >= 1000:
         print("AudioSet clips already present, skipping")
         return
     out.mkdir(exist_ok=True)
