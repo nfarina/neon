@@ -346,7 +346,8 @@ final class VoiceSession: NSObject {
                 }
                 else if name == captureToolName { handleCapture(id: id) }
                 else if name == timerToolName {
-                    let label = (args["label"] as? String) ?? "timer"
+                    // No label is the normal case — the clock alone is the UI.
+                    let label = (args["label"] as? String) ?? ""
                     let seconds = (args["seconds"] as? Double) ?? 60
                     let replaced = KitchenTimer.shared.isActive
                     KitchenTimer.shared.start(label: label, seconds: seconds)

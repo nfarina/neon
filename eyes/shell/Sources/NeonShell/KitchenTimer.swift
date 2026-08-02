@@ -70,14 +70,14 @@ final class KitchenTimer {
 
     /// What the model should hear when it asks.
     func status() -> String {
-        if ringing { return "The \"\(label)\" timer is going off right now." }
+        if ringing { return "The \(label.isEmpty ? "" : "\"\(label)\" ")timer is going off right now." }
         guard dueAt != nil else { return "No timer set." }
         let left = Int(remaining)
         let time = left >= 60
             ? "\(left / 60) minute\(left / 60 == 1 ? "" : "s")"
                 + (left % 60 > 0 ? " \(left % 60) seconds" : "")
             : "\(left) seconds"
-        return "\"\(label)\" — \(time) left."
+        return "\(label.isEmpty ? "Timer" : "\"\(label)\"") — \(time) left."
     }
 
     private func ring() {
@@ -89,7 +89,7 @@ final class KitchenTimer {
         chime()
         // Keep chiming until someone deals with it. A timer that dings once
         // from another room may as well not have gone off.
-        chimeTimer = Timer.scheduledTimer(withTimeInterval: 2.4, repeats: true) { [weak self] _ in
+        chimeTimer = Timer.scheduledTimer(withTimeInterval: 2.2, repeats: true) { [weak self] _ in
             self?.chime()
         }
     }
@@ -104,23 +104,36 @@ final class KitchenTimer {
         hub.ensurePlayer()
         let rate = 24000.0
         let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)!
-        let notes: [(freq: Double, start: Double, len: Double)] = [
-            (880, 0.0, 0.28), (1174.7, 0.22, 0.42),
-        ]
-        let total = 0.7
+        // Three strikes per chime, each a fundamental plus its octave and a
+        // fifth: partials carry across a noisy kitchen far better than a
+        // louder pure tone, which mostly just sounds harsh.
+        let strikes: [Double] = [0.0, 0.30, 0.60]
+        let total = 1.5
         let frames = AVAudioFrameCount(rate * total)
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
         buffer.frameLength = frames
         let out = buffer.floatChannelData![0]
         for i in 0..<Int(frames) { out[i] = 0 }
-        for note in notes {
-            let start = Int(note.start * rate)
-            let len = Int(note.len * rate)
-            for i in 0..<len where start + i < Int(frames) {
+        for (n, start) in strikes.enumerated() {
+            let base = n == 2 ? 1174.7 : 880.0     // the third strike lifts
+            let startFrame = Int(start * rate)
+            let len = Int(0.55 * rate)
+            for i in 0..<len where startFrame + i < Int(frames) {
                 let t = Double(i) / rate
-                let envelope = exp(-t * 6.5)          // struck-bell decay
-                out[start + i] += Float(sin(2 * .pi * note.freq * t) * envelope * 0.22)
+                let envelope = exp(-t * 4.5)       // struck-bell decay, longer tail
+                let v = sin(2 * .pi * base * t)
+                    + 0.5 * sin(2 * .pi * base * 2 * t)
+                    + 0.3 * sin(2 * .pi * base * 3 * t)
+                out[startFrame + i] += Float(v * envelope * 0.34)
             }
+        }
+        // Guard against the sum clipping into distortion, which reads as
+        // "broken speaker" rather than "loud".
+        var peak: Float = 0
+        for i in 0..<Int(frames) { peak = max(peak, abs(out[i])) }
+        if peak > 0.95 {
+            let scale = 0.95 / peak
+            for i in 0..<Int(frames) { out[i] *= scale }
         }
         hub.player.scheduleBuffer(buffer, at: nil, options: [], completionHandler: nil)
     }
@@ -141,7 +154,7 @@ final class KitchenTimer {
         guard let data = try? Data(contentsOf: path),
               let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else { return }
-        label = obj["label"] as? String ?? "timer"
+        label = obj["label"] as? String ?? ""
         let wasRinging = obj["ringing"] as? Bool ?? false
         let due = (obj["dueAt"] as? TimeInterval).map { Date(timeIntervalSince1970: $0) }
         // Defer: the audio hub and the web page aren't up yet at init time.

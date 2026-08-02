@@ -55,7 +55,9 @@ let timerToolDescription = """
     Set the kitchen timer. There is only one, so this replaces any timer \
     already running. It rings by itself on screen when it's up — you are not \
     involved and shouldn't promise to tell them; just confirm it briefly \
-    ("five minutes, going"). Label it for whatever it's for.
+    ("five minutes, going"). Only pass a label if they actually said what \
+    it's for ("pasta", "tea") — never invent one, and leave it out for a \
+    plain "set a timer for five minutes".
     """
 let timerCheckToolName = "check_timer"
 let timerCheckToolDescription = """
@@ -150,11 +152,11 @@ struct GeminiEngine: VoiceEngine {
                             "type": "OBJECT",
                             "properties": [
                                 "label": ["type": "STRING",
-                                          "description": "1-3 words, shown on screen — \"pasta\", \"tea\""],
+                                          "description": "Optional. Only what they said it's for — \"pasta\", \"tea\". Omit if they didn't say."],
                                 "seconds": ["type": "NUMBER",
                                             "description": "How long from now, in seconds"],
                             ],
-                            "required": ["label", "seconds"],
+                            "required": ["seconds"],
                          ]],
                         ["name": timerCheckToolName, "description": timerCheckToolDescription],
                         ["name": timerStopToolName, "description": timerStopToolDescription],

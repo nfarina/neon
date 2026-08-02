@@ -535,13 +535,18 @@ function renderTimer() {
     ? `${Math.floor(left / 3600)}:${String(Math.floor(left % 3600 / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`
     : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
   el.innerHTML = "";
-  const label = document.createElement("span");
-  label.className = "tlabel";
-  label.textContent = timerState.label || "timer";
   const time = document.createElement("span");
   time.className = "tclock";
   time.textContent = ringing ? "time's up" : clock;
-  el.append(label, time);
+  // An unlabelled timer shows the clock alone — most timers are just "five
+  // minutes", and inventing a name for them is worse than having none.
+  if (timerState.label) {
+    const label = document.createElement("span");
+    label.className = "tlabel";
+    label.textContent = timerState.label;
+    el.append(label);
+  }
+  el.append(time);
   if (ringing) {
     const hint = document.createElement("span");
     hint.className = "thint";
