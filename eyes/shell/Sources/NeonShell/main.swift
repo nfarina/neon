@@ -223,10 +223,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ note: Notification) {
         Kiosk.apply()
+        updateCursor()
+    }
+
+    func applicationDidResignActive(_ note: Notification) {
+        updateCursor()
     }
 
     func applicationWillTerminate(_ note: Notification) {
+        setCursorHidden(false)
         display.restoreImmediately()
+    }
+
+    // The page's `cursor: none` only holds while the pointer is over web
+    // content; the native arrow still reappears on any movement, and an arrow
+    // parked in the middle of the kitchen display is exactly the sort of
+    // "this is a computer" detail the eyes are trying to make you forget.
+    // Hidden only while Neon is frontmost and opaque: in ghost mode the point
+    // is to work with what's underneath, which needs a pointer.
+    private var cursorHidden = false
+
+    private func updateCursor() {
+        setCursorHidden(NSApp.isActive && !transparentMode)
+    }
+
+    /// NSCursor.hide/unhide are a balanced pair — an unmatched hide leaves the
+    /// cursor invisible system-wide until this process dies.
+    private func setCursorHidden(_ hide: Bool) {
+        guard hide != cursorHidden else { return }
+        cursorHidden = hide
+        if hide { NSCursor.hide() } else { NSCursor.unhide() }
     }
 
     /// The debug workflow runs the binary straight from a shell, so Ctrl-C is
@@ -318,6 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // long-standing way to make it composite transparently.
         webView.setValue(!transparentMode, forKey: "drawsBackground")
         webView.evaluateJavaScript("window.neon && neon.transparent(\(transparentMode))")
+        updateCursor()   // ghost mode needs a pointer for what's underneath
     }
 
     private func cycleEngine() {

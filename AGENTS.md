@@ -123,18 +123,38 @@ As of July 31, 2026:
   misleading. The package wraps the port-file read and the WebSocket connect in
   one `try`, so a refused connection is reported as a missing file. Check
   whether the connection was approved in Chrome before suspecting the file.
+  **The usual cause is a timing race, not configuration** (diagnosed
+  2026-08-02): Chrome raises the consent dialog per connection, the MCP client
+  gives up in well under a second, and `allow-chrome-mcp` was polling at 1 Hz —
+  so the first call after an idle period failed and the retry succeeded. Before
+  suspecting anything else, verify the endpoint directly: the port file, a
+  listener on 9222, and a WebSocket handshake against the UUID path in the file
+  (`curl -i -H "Connection: Upgrade" -H "Upgrade: websocket" -H
+  "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="
+  http://127.0.0.1:9222/devtools/browser/<uuid>` → expect `101`). If that
+  handshake works, Chrome is fine and the problem is approval timing.
+  `~/Library/Logs/allow-chrome-mcp.log` timestamps show it plainly. The helper
+  is now event-driven, so this should stay fixed; a *single* failed call
+  followed by a working retry is the signature of it regressing.
 - `--browserUrl` is not a usable fallback on Chrome 151: the classic
   `/json/version` discovery endpoint returns 404 in this mode.
 - The Chrome DevTools skills that ship inside the `chrome-devtools-mcp` package
   are installed in `~/.claude/skills`. `~/.claude-update-chrome-mcp-skills`
   refreshes them from the latest published package; it also lists skills in
   that directory that did not come from the package, so stale ones are visible.
-- The source for Nick's `allow-chrome-mcp` helper is tracked at
-  `tools/allow-chrome-mcp`. It is installed as the user LaunchAgent
-  `com.nfarina.allow-chrome-mcp` and requires macOS Accessibility permission.
-- Neon's installed Swift 6.3.3 compiler and default macOS 26.5 SDK are
-  mismatched. The `allow-chrome-mcp` Makefile currently builds against the
-  installed macOS 15.4 SDK with a macOS 15 deployment target.
+- Nick's `allow-chrome-mcp` helper lives in its own repo at
+  `~/Code/allow-chrome-mcp` (moved out of Neon 2026-08-02 — it is a general
+  Chrome/MCP tool, not a Neon one). It installs as the user LaunchAgent
+  `com.nfarina.allow-chrome-mcp` and needs macOS Accessibility permission.
+  Its Makefile builds against the installed macOS 15.4 SDK with a macOS 15
+  deployment target, because Neon's Swift 6.3.3 compiler and default macOS
+  26.5 SDK are mismatched.
+- macOS keys Accessibility (and other TCC grants) to the code signature, so
+  an ad-hoc-signed binary loses its permission on every rebuild — the agent
+  then sits in "Waiting for Accessibility permission" while Chrome dialogs go
+  unanswered, which looks exactly like the MCP being broken. Both this helper
+  and `eyes/build.sh` sign with the stable self-signed "Neon Dev" identity for
+  that reason. Same trick, two different permissions (Accessibility, mic).
 - Nick's MacBook Air can be mounted through Finder's Network view for small,
   selective file transfers.
 - This directory is a Git repository on the `main` branch.
@@ -396,6 +416,18 @@ Work toward Neon's spoken conversation lives under `voice/`.
   hue-offset channel (S.hueX) back it; wake/drowse/sleep call clearEmote()
   so a cancelled mid-emote can't strand a closed eye. The prompt encourages
   frequent, unannounced use. X key cycles all emotes with the badge.
+- **Emotes must act on shape, not brightness.** The first set mostly pushed
+  `open` and `lum`, and Nick found them all too subtle except `confused` —
+  which works precisely because it changes the *silhouette* (one lid at half,
+  gaze off-axis, held ~2 s). Brightness and openness are already busy carrying
+  speaking, hearing and breathing, so an emote spending them is competing with
+  background noise. Shape channels added for this: `brow` (−1 outer-down/sad
+  .. +1 inner-down/stern, clipped as a slanted wedge off the top — with no
+  eyebrows to draw, the upper lid's angle *is* the expression), `curve`
+  (0..1, subtracts a rising circle to make ^^ crescents, even-odd clip),
+  `pop` (uniform scale) and per-eye `offL`/`offR` (bounce, asymmetry). Hold a
+  shape ~1.5 s: a fast flicker reads as a rendering glitch, not a feeling.
+  `confused` is deliberately left untouched.
 - Short-term memory: `ConversationLog` appends each session's transcript
   (from the input/output transcription events) to
   `~/.config/neon/conversations.md`, capped at 30k chars; the last ~2.5k
@@ -436,6 +468,13 @@ Work toward Neon's spoken conversation lives under `voice/`.
   cycle state previews (awake → hearing → thinking → speaking → off, an
   on-screen badge names each; works in plain Chrome too) · Tab (hold)
   shortcut legend.
+- The mouse cursor is hidden whenever Neon is frontmost and opaque
+  (`NSCursor.hide()` on activate, unhide on resign — they are a balanced pair,
+  and an unmatched hide leaves the cursor invisible system-wide until the
+  process dies). The page's `cursor: none` is not enough: it only applies
+  while the pointer is over web content, so the native arrow reappears on any
+  movement. Ghost mode (T) deliberately restores the cursor — the whole point
+  there is working with what's underneath.
 - S means "that's enough for now", not "hang up": it closes the session
   with reason "manual", which the eyes treat exactly like a tool sleep —
   lids shut at once. The slow dozing-off animation stays reserved for
@@ -614,6 +653,14 @@ The first ambient-assistant implementation exists under `eyes/`:
   if accuracy disappoints, replace this one class with a real wake-word engine
   (e.g. Picovoice Porcupine — requires a free account) — the only contract is
   the `onWake` closure.
+- `eyes/shot.swift` — `swift eyes/shot.swift out.png [emote ...]` renders a
+  contact sheet of the eyes' expressions from an offscreen WKWebView, driving
+  the same `window.neon` API the shell uses and snapshotting each at its peak
+  frame. Built because checking nine expressions through Chrome is nine round
+  trips, and because a fullscreen kiosk window sits on top of Chrome's MCP
+  approval dialog. Its window is deliberately on screen (faint, floating):
+  macOS throttles requestAnimationFrame in occluded windows, which stalls the
+  animation and snapshots the wrong frame.
 - `eyes/rebuild.sh` — build + restart in one command; the everyday loop.
   Both the Swift and `web/index.html` are copied into the bundle, so an
   edit to *either* needs a rebuild, not just a relaunch.

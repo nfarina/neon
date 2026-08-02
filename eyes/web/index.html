@@ -125,6 +125,15 @@ const S = {
   winkL: ch(1),     // per-eye open multipliers (1 = follow the pair)
   winkR: ch(1),
   hueX:  ch(0),     // hue offset from cyan (love goes pink)
+  // Shape channels. Brightness and openness are already busy carrying
+  // speech, hearing and breathing, so emotes that only push those read as
+  // noise. These change the eyes' silhouette instead, which nothing else
+  // touches — the reason `confused` (asymmetric lids) always landed.
+  brow:  ch(0),     // -1 outer-down (sad) .. +1 inner-down (stern//determined)
+  curve: ch(0),     // 0 .. 1 bottom eaten into a happy ^^ crescent
+  pop:   ch(1),     // uniform scale, for surprise and heartbeats
+  offL:  ch(0),     // per-eye vertical offset in eye-heights (bounce, tilt)
+  offR:  ch(0),
 };
 
 // scheduled one-shot tasks, driven by the frame clock
@@ -210,56 +219,94 @@ function saccadeLoop() {
 // Short one-shot expressions the model triggers via its emote tool.
 function clearEmote() {
   to(S.winkL, 1, 0.2); to(S.winkR, 1, 0.2); to(S.hueX, 0, 0.3);
+  to(S.brow, 0, 0.25); to(S.curve, 0, 0.25); to(S.pop, 1, 0.25);
+  to(S.offL, 0, 0.25); to(S.offR, 0, 0.25);
 }
+// Every emote should be recognisable in silhouette, with the shape held long
+// enough to register (~1.5 s) — a fast flicker of brightness reads as a
+// rendering glitch, not a feeling.
 const EMOTES = {
   happy() {
-    to(S.open, 0.5, 0.22, easeOutCubic); to(S.lum, 1.05, 0.2);
-    after(1.5, () => { to(S.open, 1, 0.35); to(S.lum, 1, 0.4); });
+    to(S.curve, 0.85, 0.22, easeOutCubic);   // ^^ crescents
+    to(S.open, 1.05, 0.22); to(S.lum, 1.05, 0.2);
+    after(1.5, () => { to(S.curve, 0, 0.3); to(S.open, 1, 0.35); to(S.lum, 1, 0.4); });
   },
   laugh() {
-    to(S.open, 0.45, 0.18); to(S.lum, 1.1, 0.15);
-    for (let i = 0; i < 4; i++) {
-      after(0.18 + i * 0.26, () => {
-        to(S.gy, -0.14, 0.11);
-        after(0.13, () => to(S.gy, 0.1, 0.11));
+    to(S.curve, 0.92, 0.16, easeOutCubic);
+    to(S.lum, 1.12, 0.15);
+    for (let i = 0; i < 4; i++) {          // the shoulders-shaking bounce
+      after(0.16 + i * 0.24, () => {
+        to(S.offL, -0.09, 0.1); to(S.offR, -0.09, 0.1); to(S.pop, 1.06, 0.1);
+        after(0.12, () => { to(S.offL, 0.05, 0.11); to(S.offR, 0.05, 0.11); to(S.pop, 0.98, 0.11); });
       });
     }
-    after(1.6, () => { to(S.open, 1, 0.3); to(S.lum, 1, 0.35); to(S.gy, 0, 0.3); });
+    after(1.5, () => {
+      to(S.curve, 0, 0.3); to(S.lum, 1, 0.35); to(S.pop, 1, 0.25);
+      to(S.offL, 0, 0.25); to(S.offR, 0, 0.25);
+    });
   },
   surprised() {
-    to(S.open, 1.22, 0.1, easeOutBack); to(S.lum, 1.15, 0.1); glanceTo(0, -0.05);
-    after(1.4, () => { to(S.open, 1, 0.3); to(S.lum, 1, 0.4); });
+    to(S.pop, 1.32, 0.09, easeOutBack);     // both eyes go wide, fast
+    to(S.open, 1.2, 0.09, easeOutBack); to(S.lum, 1.15, 0.1);
+    glanceTo(0, -0.06);
+    after(0.5, () => to(S.pop, 1.18, 0.18));     // a small double-take
+    after(0.72, () => to(S.pop, 1.3, 0.12, easeOutBack));
+    after(1.35, () => { to(S.pop, 1, 0.3); to(S.open, 1, 0.3); to(S.lum, 1, 0.4); });
   },
   wink() {
-    to(S.winkR, 0.02, 0.12, easeInCubic);
-    after(0.5, () => to(S.winkR, 1, 0.22, easeOutCubic));
+    to(S.winkR, 0.02, 0.11, easeInCubic);
+    to(S.curve, 0.6, 0.14);                 // the other eye smiles along
+    to(S.offR, 0.05, 0.12);
+    after(0.55, () => {
+      to(S.winkR, 1, 0.2, easeOutCubic); to(S.curve, 0, 0.25); to(S.offR, 0, 0.2);
+    });
   },
   sad() {
-    to(S.open, 0.55, 0.7); to(S.gy, 0.35, 0.8); to(S.lum, 0.55, 0.9);
-    after(2.4, () => { to(S.open, 1, 0.5); to(S.gy, 0, 0.5); to(S.lum, 1, 0.6); });
+    to(S.brow, -0.7, 0.5);                  // outer corners droop
+    to(S.open, 0.62, 0.7); to(S.gy, 0.34, 0.8); to(S.lum, 0.5, 0.9);
+    to(S.offL, 0.05, 0.7); to(S.offR, 0.05, 0.7);
+    after(2.4, () => {
+      to(S.brow, 0, 0.5); to(S.open, 1, 0.5); to(S.gy, 0, 0.5); to(S.lum, 1, 0.6);
+      to(S.offL, 0, 0.5); to(S.offR, 0, 0.5);
+    });
   },
+  // Untouched: the asymmetry already makes this the most legible of the set,
+  // and it's the one Nick singled out. Don't "improve" it.
   confused() {
     to(S.winkL, 0.5, 0.25); to(S.gx, 0.28, 0.3); to(S.gy, -0.1, 0.3);
     after(1.8, () => { to(S.winkL, 1, 0.25); glanceTo(0, 0); });
   },
   eyeroll() {
+    to(S.brow, 0.45, 0.25);                 // the lids come down on it
+    to(S.open, 0.8, 0.25);
     glanceTo(0.4, -0.1);
-    after(0.25, () => glanceTo(0.25, -0.45));
-    after(0.5, () => glanceTo(-0.2, -0.5));
+    after(0.25, () => glanceTo(0.25, -0.5));
+    after(0.5, () => glanceTo(-0.2, -0.55));
     after(0.8, () => glanceTo(-0.35, -0.1));
-    after(1.15, () => glanceTo(0, 0));
+    after(1.15, () => { glanceTo(0, 0); to(S.brow, 0, 0.35); to(S.open, 1, 0.35); });
   },
   excited() {
-    to(S.lum, 1.15, 0.12);
-    to(S.open, 1.2, 0.12, easeOutBack);
-    after(0.25, () => to(S.open, 0.95, 0.12));
-    after(0.5, () => to(S.open, 1.18, 0.12, easeOutBack));
-    after(0.78, () => to(S.open, 1, 0.15));
-    after(1.3, () => to(S.lum, 1, 0.4));
+    to(S.lum, 1.18, 0.12); to(S.curve, 0.45, 0.15);
+    const hop = (t, up) => after(t, () => {
+      to(S.pop, up ? 1.22 : 0.96, 0.11, up ? easeOutBack : easeOutCubic);
+      to(S.offL, up ? -0.07 : 0.02, 0.11); to(S.offR, up ? -0.07 : 0.02, 0.11);
+    });
+    hop(0, true); hop(0.24, false); hop(0.44, true); hop(0.68, false); hop(0.86, true);
+    after(1.2, () => {
+      to(S.pop, 1, 0.2); to(S.curve, 0, 0.3); to(S.lum, 1, 0.4);
+      to(S.offL, 0, 0.2); to(S.offR, 0, 0.2);
+    });
   },
   love() {
-    to(S.hueX, 139, 0.35); to(S.lum, 1.1, 0.3); to(S.open, 0.75, 0.35);
-    after(2.2, () => { to(S.hueX, 0, 0.6); to(S.lum, 1, 0.5); to(S.open, 1, 0.4); });
+    to(S.hueX, 139, 0.3); to(S.curve, 0.7, 0.3); to(S.lum, 1.1, 0.3);
+    const beat = t => {                     // two thumps, like a heartbeat
+      after(t, () => to(S.pop, 1.18, 0.13, easeOutBack));
+      after(t + 0.16, () => to(S.pop, 1.0, 0.18));
+    };
+    beat(0.3); beat(0.62); beat(1.3); beat(1.62);
+    after(2.2, () => {
+      to(S.hueX, 0, 0.6); to(S.curve, 0, 0.4); to(S.lum, 1, 0.5); to(S.pop, 1, 0.3);
+    });
   },
 };
 
@@ -442,11 +489,13 @@ function draw() {
     const cy = H / 2 + gy * gazePx * 0.8 + bobY;
 
     const wink = dir < 0 ? S.winkL.v : S.winkR.v;
-    let h = eyeH * Math.min(openEff * wink, 1.18) * (1 + speakAmp * 0.05 + hearAmp * 0.06 * awakeGate);
+    const pop = S.pop.v;
+    const offY = (dir < 0 ? S.offL.v : S.offR.v) * eyeH;
+    let h = eyeH * Math.min(openEff * wink, 1.18) * (1 + speakAmp * 0.05 + hearAmp * 0.06 * awakeGate) * pop;
     // slight sympathetic widening as lids close (squash & stretch)
-    let w = eyeW * (1 + (1 - Math.min(openEff, 1)) * 0.10);
+    let w = eyeW * (1 + (1 - Math.min(openEff, 1)) * 0.10) * pop;
     // lids close mostly from the top: bias the visible slit downward
-    const y = cy - h / 2 + (eyeH - Math.min(h, eyeH)) * 0.28;
+    const y = cy - h / 2 + (eyeH - Math.min(h, eyeH)) * 0.28 + offY;
     const x = cx - w / 2;
     const r = Math.min(w * 0.42, h / 2);
 
@@ -456,6 +505,36 @@ function draw() {
     const grad = ctx.createLinearGradient(0, y, 0, y + h);
     grad.addColorStop(0, `hsl(${hue} 92% ${topL}%)`);
     grad.addColorStop(1, `hsl(${hue + 6} 96% ${botL}%)`);
+
+    ctx.save();
+    // Brow: clip away a slanted wedge off the top. With no eyebrows to draw,
+    // the angle of the upper lid is the whole expression — inner-down reads
+    // stern, outer-down reads sad.
+    const brow = S.brow.v;
+    if (Math.abs(brow) > 0.01) {
+      const drop = Math.abs(brow) * h * 0.55;
+      const inner = brow > 0 ? drop : 0, outer = brow > 0 ? 0 : drop;
+      // dir -1 is the left eye, whose inner edge is on the right
+      const yL = y + (dir < 0 ? outer : inner);
+      const yR = y + (dir < 0 ? inner : outer);
+      const pad = w;
+      ctx.beginPath();
+      ctx.moveTo(x - pad, yL);
+      ctx.lineTo(x + w + pad, yR);
+      ctx.lineTo(x + w + pad, y + h + pad);
+      ctx.lineTo(x - pad, y + h + pad);
+      ctx.clip();
+    }
+    // Crescent: subtract a circle rising from below, turning the eye into a
+    // ^^ smile. Even-odd on rect+circle gives "rect minus circle".
+    if (S.curve.v > 0.01) {
+      const eaten = S.curve.v * h * 0.62;
+      const R = w * 1.05;
+      ctx.beginPath();
+      ctx.rect(x - w, y - h, w * 3, h * 3);
+      ctx.arc(cx, y + h + R - eaten, R, 0, Math.PI * 2);
+      ctx.clip("evenodd");
+    }
 
     // wide soft bloom pass
     ctx.save();
@@ -476,6 +555,8 @@ function draw() {
     ctx.roundRect(x, y, w, h, r);
     ctx.fill();
     ctx.restore();
+
+    ctx.restore();  // brow / crescent clips
   }
 
   ctx.globalAlpha = 1;
