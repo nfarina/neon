@@ -148,6 +148,11 @@ final class VoiceSession: NSObject {
            !profile.isEmpty {
             system += "\n\nAbout the people you live with (from Nick):\n\(profile)"
         }
+        // Where and when, resolved fresh per session: a model's cutoff is not
+        // today, and "what's the weather" needs a city.
+        if let here = LocationProvider.shared.promptLine() {
+            system += "\n\n\(here)"
+        }
         if let recent = ConversationLog.shared.recentContext() {
             system += """
 

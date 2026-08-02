@@ -36,6 +36,12 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
   <string>Neon uses on-device speech recognition to hear "Hey Neon".</string>
   <key>NSCameraUsageDescription</key>
   <string>Neon can see the kitchen through the camera during conversations.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Neon uses your location for local answers like weather and sunset times.</string>
+  <!-- macOS honours the plain key; the WhenInUse one alone can leave the
+       authorization prompt un-raised. Ship both. -->
+  <key>NSLocationUsageDescription</key>
+  <string>Neon uses your location for local answers like weather and sunset times.</string>
 </dict>
 </plist>
 EOF

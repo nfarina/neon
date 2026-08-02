@@ -60,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         display.start()
+        LocationProvider.shared.start()
         idleTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             self?.checkIdle()
         }
@@ -481,6 +482,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ["engine", "\(providerName) (idle)"],
                 ["state", "wake listener"],
                 ["wake", wakeStatus()],
+                ["here", LocationProvider.shared.status()],
                 ["lifetime", String(format: "$%.3f", UsageStore.shared.total)],
                 ["mac hears", String(wakeHeard.suffix(70))],
             ]
