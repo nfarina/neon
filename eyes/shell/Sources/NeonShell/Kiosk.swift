@@ -40,4 +40,16 @@ enum Kiosk {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         return mods == [.control, .option, .command]
     }
+
+    /// Ctrl-Opt-Cmd-H — step aside without quitting. macOS permission prompts
+    /// (location, mic, screen recording) and Chrome's debugging consent all
+    /// appear *behind* a fullscreen kiosk window that has disabled process
+    /// switching and app hiding, which makes them impossible to answer: the
+    /// system is waiting on a click nobody can deliver. This drops the
+    /// lockdown for a moment so the dialog can be dealt with.
+    static func isStepAsideChord(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown, event.keyCode == 4 else { return false }  // h
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return mods == [.control, .option, .command]
+    }
 }

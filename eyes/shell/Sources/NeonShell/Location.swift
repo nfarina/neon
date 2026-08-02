@@ -31,9 +31,17 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyKilometer
     }
 
+    /// Raised when macOS is about to show (or has shown) the authorization
+    /// prompt, and lowered once it's answered. The kiosk window sits above the
+    /// menu bar with process switching disabled, so without this the dialog is
+    /// literally unclickable — the first attempt at this feature stalled
+    /// exactly there.
+    var onAwaitingPermission: (Bool) -> Void = { _ in }
+
     func start() {
         switch manager.authorizationStatus {
         case .notDetermined:
+            onAwaitingPermission(true)
             manager.requestWhenInUseAuthorization()   // fix requested in the callback
         case .authorized, .authorizedAlways:
             manager.requestLocation()
@@ -78,8 +86,12 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
     // MARK: - CLLocationManagerDelegate
 
     func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
+        guard m.authorizationStatus != .notDetermined else { return }
+        onAwaitingPermission(false)   // answered, either way — take the screen back
         if m.authorizationStatus == .authorized || m.authorizationStatus == .authorizedAlways {
             m.requestLocation()
+        } else {
+            dbg("location: not authorized; falling back to the profile file")
         }
     }
 

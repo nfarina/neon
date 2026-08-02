@@ -60,6 +60,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         display.start()
+        // Yield the screen while macOS asks about location, and take it back
+        // the moment the question is answered.
+        LocationProvider.shared.onAwaitingPermission = { [weak self] waiting in
+            if waiting {
+                self?.stepAside(for: 90, reason: "location permission dialog")
+            } else {
+                self?.stepBack()
+            }
+        }
         LocationProvider.shared.start()
         idleTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             self?.checkIdle()
@@ -70,6 +79,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.noteActivity()
             if Kiosk.isQuitChord(event) {
                 NSApp.terminate(nil)
+                return nil
+            }
+            if Kiosk.isStepAsideChord(event) {
+                self?.stepAside(for: 45, reason: "make way for a system dialog")
                 return nil
             }
             if event.type == .keyUp {
@@ -264,6 +277,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ note: Notification) {
+        // Reapplying the lockdown while stepped aside would immediately undo
+        // the whole point of stepping aside.
+        if !steppedAside { Kiosk.apply() }
+        updateCursor()
+    }
+
+    // ==================================================== step aside
+    // The kiosk options that keep a guest from escaping — no process
+    // switching, no app hiding, a window above the menu bar — also make macOS
+    // permission prompts unanswerable: the dialog is behind Neon and the ways
+    // to get past her are switched off. Location authorization hit this
+    // immediately. So there is a deliberate way to yield the screen without
+    // quitting, on a chord (Ctrl-Opt-Cmd-H) and automatically whenever
+    // something is known to be waiting on a click.
+
+    private var steppedAside = false
+    private var stepAsideTimer: Timer?
+
+    func stepAside(for seconds: TimeInterval, reason: String) {
+        stepAsideTimer?.invalidate()
+        if !steppedAside {
+            steppedAside = true
+            logEvent("session", "stepping aside — \(reason)")
+            NSApp.presentationOptions = []
+            window.level = .normal
+            window.orderBack(nil)
+            NSApp.hide(nil)
+        }
+        // Always come back on its own. A kitchen display that stayed hidden
+        // because nobody answered a dialog would just look broken.
+        stepAsideTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            self?.stepBack()
+        }
+    }
+
+    func stepBack() {
+        guard steppedAside else { return }
+        stepAsideTimer?.invalidate()
+        stepAsideTimer = nil
+        steppedAside = false
+        logEvent("session", "back to kiosk")
+        NSApp.unhide(nil)
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
         Kiosk.apply()
         updateCursor()
     }
