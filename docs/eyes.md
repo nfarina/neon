@@ -117,6 +117,13 @@ build scripts. The first ambient-assistant implementation, under `eyes/`.
   if accuracy disappoints, replace this one class with a real wake-word engine
   (e.g. Picovoice Porcupine — requires a free account) — the only contract is
   the `onWake` closure.
+- The snapshot harness must sit **above** Neon's kiosk window, not merely
+  `.floating`. macOS throttles requestAnimationFrame in an occluded window to
+  nothing — measured 1 frame in 2.6 s under the fullscreen kiosk versus 165
+  with it quit — which yields a blank canvas and an animation frozen on its
+  first frame, looking exactly like a rendering bug in the page. `shot.swift`
+  now sits at `mainMenu + 2` and prints a frame count with every shot, so the
+  next occurrence is self-diagnosing.
 - `eyes/shot.swift` — `swift eyes/shot.swift out.png [emote ...]` renders a
   contact sheet of the eyes' expressions from an offscreen WKWebView, driving
   the same `window.neon` API the shell uses and snapshotting each at its peak

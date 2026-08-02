@@ -43,6 +43,14 @@ final class VoiceSession: NSObject {
         when someone's sweet. Don't announce it or mention the tool; just \
         let your eyes react while you talk.
 
+        You can set timers and run things in the background. Anything in \
+        square brackets is an event from the house, not somebody speaking — \
+        a timer going off, a task finishing. Announce it the way a person in \
+        the kitchen would call it out: short, natural, and about the thing \
+        itself ("pasta's done") — never the id, the word "task", or that a \
+        tool told you. If you were asleep and this woke you, announce it and \
+        then call \(sleepToolName) unless someone answers you.
+
         You hear everything near the microphone, including people talking to \
         each other rather than to you. If speech clearly isn't directed at \
         you, don't respond to it, comment on it, or echo it — just stay \
@@ -187,6 +195,17 @@ final class VoiceSession: NSObject {
         engine.cost(usage, elapsed: Date().timeIntervalSince(sessionStart))
     }
 
+    /// Hand the model something to say mid-conversation that nobody in the
+    /// room said — a timer going off, a task finishing. Arrives as a user turn
+    /// because that's the only role the live API takes after setup; the system
+    /// prompt tells her these are events to relay, not speech to answer.
+    func inject(_ note: String) {
+        guard !closed, !sleepRequested else { return }
+        trace("task", "injected: \(note)")
+        for m in engine.readyMessages(greeting: note) { sendJSON(m) }
+        bumpIdle()
+    }
+
     /// External evidence that someone in the room is talking (the wake
     /// listener's recognizer produced a partial). Far more distance-tolerant
     /// than the mic RMS gate; keeps the idle/doze logic from hanging up on
@@ -322,6 +341,38 @@ final class VoiceSession: NSObject {
                     requestSleep()
                 }
                 else if name == captureToolName { handleCapture(id: id) }
+                else if name == timerToolName {
+                    let label = (args["label"] as? String) ?? "timer"
+                    let seconds = (args["seconds"] as? Double) ?? 60
+                    let created = TaskStore.shared.addTimer(title: label, seconds: seconds)
+                    trace("task", created == nil
+                        ? "set_timer refused — \(TaskStore.maxActive) already running"
+                        : "timer \(created!.id): \(label), \(Int(seconds))s")
+                    if let resp = engine.toolResponseMessage(
+                        id: id, name: name,
+                        result: created.map { "Timer \($0.id) set. You'll be told when it fires." }
+                            ?? "Can't — \(TaskStore.maxActive) things are already running. Cancel one first.") {
+                        sendJSON(resp)
+                    }
+                }
+                else if name == tasksToolName {
+                    let summary = TaskStore.shared.summary()
+                    trace("task", "list_tasks")
+                    if let resp = engine.toolResponseMessage(id: id, name: name, result: summary) {
+                        sendJSON(resp)
+                    }
+                }
+                else if name == cancelToolName {
+                    let taskID = (args["id"] as? String) ?? ""
+                    let ok = TaskStore.shared.cancel(id: taskID)
+                    trace("task", "cancel \(taskID) — \(ok ? "cancelled" : "not found or already finished")")
+                    if let resp = engine.toolResponseMessage(
+                        id: id, name: name,
+                        result: ok ? "Cancelled \(taskID)."
+                                   : "No running task with id \(taskID).") {
+                        sendJSON(resp)
+                    }
+                }
                 else if name == emoteToolName {
                     let emotion = (args["emotion"] as? String) ?? "happy"
                     trace("emote", emotion)

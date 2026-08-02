@@ -17,7 +17,11 @@ import WebKit
 
 let args = CommandLine.arguments
 let outPath = args.count > 1 ? args[1] : "eyes-contact-sheet.png"
-let names = args.count > 2 ? Array(args[2...])
+// `--js "<source>"` snapshots one arbitrary UI state instead of the emote
+// sheet: anything drivable through window.neon (task list, overlays, states).
+let jsIndex = args.firstIndex(of: "--js")
+let customJS = jsIndex.flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+let names = args.count > 2 && customJS == nil ? Array(args[2...])
     : ["happy", "laugh", "surprised", "wink", "sad", "confused", "eyeroll", "excited", "love"]
 
 // When each expression is at its most characteristic, in seconds after firing.
@@ -40,8 +44,14 @@ final class Harness: NSObject, WKNavigationDelegate {
                           backing: .buffered, defer: false)
         super.init()
         window.contentView = web
-        window.level = .floating
+        // Above Neon's own kiosk window (mainMenu + 1), not merely floating.
+        // Anything it covers is "occluded", and macOS throttles rAF in an
+        // occluded window to nothing: measured 1 frame in 2.6 s under the
+        // kiosk window versus 165 with it quit — a blank canvas and an
+        // animation frozen on its first frame. Alpha keeps it invisible.
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 2)
         window.alphaValue = 0.02   // present for the compositor, invisible to the room
+        window.ignoresMouseEvents = true
         window.orderFrontRegardless()
         web.navigationDelegate = self
     }
@@ -55,7 +65,11 @@ final class Harness: NSObject, WKNavigationDelegate {
     }
 
     private func js(_ src: String) async {
-        _ = try? await web.evaluateJavaScript(src)
+        do {
+            _ = try await web.evaluateJavaScript(src)
+        } catch {
+            print("JS error: \(error.localizedDescription)\n  in: \(src.prefix(120))")
+        }
     }
 
     private func sleep(_ s: Double) async {
@@ -70,6 +84,23 @@ final class Harness: NSObject, WKNavigationDelegate {
 
     func run() async {
         await sleep(1.0)   // let the page settle into its asleep state
+        if let customJS {
+            // Count animation frames while we wait. A blank canvas with a
+            // stalled state is always this: rAF not running, because macOS
+            // throttles it in an occluded window.
+            await js("window.__frames = 0;"
+                + "(function tick(){ window.__frames++; requestAnimationFrame(tick); })();")
+            if let value = try? await web.evaluateJavaScript(customJS), !(value is NSNull) {
+                print("js → \(value)")
+            }
+            await sleep(2.6)
+            if let f = try? await web.evaluateJavaScript("window.__frames + ' frames, state=' + window.neon.state") {
+                print("render: \(f)")
+            }
+            if let img = await snapshot() { shots.append(("", img)) }
+            write()
+            exit(0)
+        }
         for name in names {
             await js("window.neon.wake()")
             await sleep(2.0)   // the wake animation ends ~1.85 s in
@@ -84,7 +115,7 @@ final class Harness: NSObject, WKNavigationDelegate {
     }
 
     private func write() {
-        let cols = 3
+        let cols = min(3, max(1, shots.count))
         let rows = Int(ceil(Double(shots.count) / Double(cols)))
         let cw = shotW, chh = shotH + 26   // room for a caption strip
         let sheet = NSImage(size: NSSize(width: cw * Double(cols), height: chh * Double(rows)))

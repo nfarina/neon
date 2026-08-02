@@ -166,6 +166,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         oww.start()
         owwListener = oww
 
+        // Neon's hands. Completions push into the announce channel below; the
+        // list pushes to the left edge of the page.
+        TaskStore.shared.onFinished = { [weak self] task in
+            self?.announce(task)
+        }
+        TaskStore.shared.onChanged = { [weak self] tasks in
+            self?.pushTasks(tasks)
+        }
+        pushTasks(TaskStore.shared.tasks)
+
         // First line of the log, once the page exists to receive it.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self else { return }
@@ -209,6 +219,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkIdle() {
+        TaskStore.shared.prune()
+        // Something is cooking — literally. Deep sleep takes the backlight
+        // down to an ember, which is the wrong state for a display that is
+        // counting down to something someone is waiting for.
+        guard TaskStore.shared.active.isEmpty else { return }
         guard !deepAsleep, voiceSession == nil,
               Date().timeIntervalSince(lastActivity) > deepSleepAfter else { return }
         deepAsleep = true
@@ -270,6 +285,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             source.resume()
             signalSources.append(source)
         }
+    }
+
+    // ==================================================== announce channel
+    // A task finished and Neon has to say so. She is usually asleep when that
+    // happens — she sleeps after 7 s of silence — so this is the piece that
+    // decides *how* she gets to speak, not just that she should.
+    //
+    // Nick's call, 2026-08-02: anything may wake the room, deep sleep
+    // included. If that turns out to be annoying at 3am, gate it here.
+
+    private func announce(_ task: NeonTask) {
+        logEvent("task", "\(task.id) \(task.status.rawValue) — announcing")
+        TaskStore.shared.markAnnounced(id: task.id)
+        if let session = voiceSession {
+            // Mid-conversation: slip it in as a turn she can work into what
+            // she's already saying.
+            session.inject(task.completionNote)
+        } else {
+            // Asleep: the openWakeWord path with a different trigger. The eyes
+            // open, she announces, and the prompt tells her to sleep again
+            // unless someone answers.
+            triggerWake(command: task.completionNote)
+        }
+    }
+
+    private func pushTasks(_ tasks: [NeonTask]) {
+        let rows: [[String: Any]] = tasks.map { t in
+            var row: [String: Any] = [
+                "id": t.id, "title": t.title, "status": t.status.rawValue,
+            ]
+            if let due = t.dueAt, t.isActive {
+                row["remaining"] = max(0, Int(due.timeIntervalSinceNow))
+            }
+            if let d = t.detail { row["detail"] = d }
+            return row
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: rows),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.neon && neon.tasks(\(json))")
     }
 
     private func triggerWake(command: String? = nil, prelude: Data? = nil,

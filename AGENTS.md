@@ -113,6 +113,7 @@ file they belong to.
 | [docs/voice.md](docs/voice.md) | Realtime speech-to-speech engines, session lifecycle, tools, costs, memory, personality |
 | [docs/wake.md](docs/wake.md) | Waking her: openWakeWord, Apple's recognizer, thresholds, wake-utterance capture |
 | [docs/eyes.md](docs/eyes.md) | Renderer and animation channels, emotes, shortcuts, overlays, kiosk, build scripts |
+| [docs/tasks.md](docs/tasks.md) | Neon's hands: timers, background work, and how a completion gets announced |
 | [docs/machine.md](docs/machine.md) | The machine, its tooling, and the permissions that keep breaking |
 | [wake/README.md](wake/README.md) | Training a wake model end to end (container pipeline) |
 

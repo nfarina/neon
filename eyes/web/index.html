@@ -30,6 +30,35 @@
     border: 1px solid rgba(102, 224, 255, 0.22);
     transition: opacity 0.25s;
   }
+  /* Tasks: what Neon has running, down the left edge. Deliberately quiet —
+     it shares the screen with a face, and a countdown should be glanceable
+     from across the kitchen without competing with her. */
+  #tasks {
+    position: fixed; left: 26px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 14px;
+    font: 13px ui-monospace, SFMono-Regular, monospace;
+    pointer-events: none;
+  }
+  .task { display: flex; align-items: center; gap: 10px; opacity: 0.92; }
+  .task.gone { opacity: 0; transition: opacity 1.2s; }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%; flex: none;
+    background: #66e0ff; box-shadow: 0 0 10px 1px rgba(102, 224, 255, 0.7);
+  }
+  .task.running .dot { animation: taskpulse 2.4s ease-in-out infinite; }
+  .task.done .dot { background: #7dffc4; box-shadow: 0 0 12px 2px rgba(125, 255, 196, 0.8); }
+  .task.cancelled .dot, .task.failed .dot {
+    background: #4a6672; box-shadow: none;
+  }
+  .task .label { color: #9fd6e6; }
+  .task.done .label { color: #7dffc4; }
+  .task.cancelled .label, .task.failed .label { color: #587585; }
+  .task .clock { color: #cfeeff; font-variant-numeric: tabular-nums; }
+  @keyframes taskpulse {
+    0%, 100% { opacity: 0.45; transform: scale(0.85); }
+    50%      { opacity: 1;    transform: scale(1.15); }
+  }
+
   /* Event log: a running trace of the conversation's machinery down the
      right edge — sessions, transcripts both ways, tools, sleeps. */
   #events {
@@ -75,6 +104,7 @@
        that gets them off Neon and into Nick's session. It lives in AGENTS.md. -->
 </div>
 <div id="badge"></div>
+<div id="tasks"></div>
 <div id="events"></div>
 <script>
 "use strict";
@@ -435,6 +465,33 @@ function pushEvent(kind, text) {
   evScroll();
 }
 
+// ============================================================ tasks
+// The shell pushes the list whenever it changes; the countdown ticks here
+// rather than over the bridge, so a running timer costs nothing per second.
+let taskList = [];
+function renderTasks() {
+  const box = document.getElementById("tasks");
+  box.innerHTML = "";
+  for (const t of taskList) {
+    const row = document.createElement("div");
+    row.className = "task " + t.status;
+    const dot = document.createElement("span"); dot.className = "dot";
+    const label = document.createElement("span"); label.className = "label";
+    label.textContent = t.title;
+    row.append(dot, label);
+    if (t.status === "running" && typeof t.remaining === "number") {
+      const left = Math.max(0, Math.round(t.remaining - (Date.now() - t.at) / 1000));
+      const clock = document.createElement("span"); clock.className = "clock";
+      clock.textContent = left >= 3600
+        ? `${Math.floor(left / 3600)}h${String(Math.floor(left % 3600 / 60)).padStart(2, "0")}`
+        : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+      row.append(clock);
+    }
+    box.appendChild(row);
+  }
+}
+setInterval(() => { if (taskList.some(t => t.status === "running")) renderTasks(); }, 1000);
+
 // ============================================================ render
 function draw() {
   const t = now;
@@ -628,6 +685,11 @@ window.neon = {
   hearing(a) { hearTarget = Math.max(hearTarget, Math.min(1, Math.max(0, a))); },
   debug(show) { document.getElementById("debug").style.display = show ? "flex" : "none"; },
   event(kind, text) { pushEvent(kind, text); },
+  tasks(rows) {
+    // Stamp arrival so the countdown stays honest without a push per second.
+    taskList = rows.map(r => ({ ...r, at: Date.now() }));
+    renderTasks();
+  },
   events(show) {
     document.getElementById("events").style.display = show ? "block" : "none";
     if (show) evScroll();  // scrollHeight is 0 while hidden, so land at the tail now

@@ -47,6 +47,25 @@ let emoteToolDescription = """
     Show a feeling with your eyes — they animate the emotion on screen. \
     Use this often, whenever it fits what you're saying or reacting to.
     """
+// Neon's hands. Timers are deliberately their own tool rather than something
+// an agent task does: a stored fire date is exact, free, and survives a
+// restart, where an agent watching a clock is none of those.
+let timerToolName = "set_timer"
+let timerToolDescription = """
+    Set a timer or reminder. You'll be told the moment it goes off, and can \
+    announce it then — so say something brief now ("five minutes, got it") \
+    rather than promising to keep track. Label it for whatever it's for.
+    """
+let tasksToolName = "list_tasks"
+let tasksToolDescription = """
+    List everything you currently have running — timers and background \
+    tasks — with how much time is left or what state they're in.
+    """
+let cancelToolName = "cancel_task"
+let cancelToolDescription = """
+    Cancel a running timer or task by its id. Use \(tasksToolName) first if \
+    you don't know the id.
+    """
 
 protocol VoiceEngine {
     var name: String { get }
@@ -124,6 +143,24 @@ struct GeminiEngine: VoiceEngine {
                             "type": "OBJECT",
                             "properties": ["emotion": ["type": "STRING", "enum": emoteEmotions]],
                             "required": ["emotion"],
+                         ]],
+                        ["name": timerToolName, "description": timerToolDescription,
+                         "parameters": [
+                            "type": "OBJECT",
+                            "properties": [
+                                "label": ["type": "STRING",
+                                          "description": "2-4 words, shown on screen — \"pasta\", \"take out bins\""],
+                                "seconds": ["type": "NUMBER",
+                                            "description": "How long from now, in seconds"],
+                            ],
+                            "required": ["label", "seconds"],
+                         ]],
+                        ["name": tasksToolName, "description": tasksToolDescription],
+                        ["name": cancelToolName, "description": cancelToolDescription,
+                         "parameters": [
+                            "type": "OBJECT",
+                            "properties": ["id": ["type": "STRING"]],
+                            "required": ["id"],
                          ]],
                     ]],
                 ],
