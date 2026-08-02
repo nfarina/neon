@@ -14,9 +14,12 @@ build scripts. The first ambient-assistant implementation, under `eyes/`.
 - Taking a picture has its own look, fired by `capture_image` rather than
   chosen by the model (`neon.capture()`, channel `S.cam`): lids narrow, the
   gaze locks dead centre and saccades stop — people stop glancing around when
-  they're actually looking at something — an aperture ring contracts inside
-  each eye, and a sensor line sweeps top to bottom. It ends a beat wider than
-  it started, like refocusing on the room.
+  they're actually looking at something — and a sensor line sweeps top to
+  bottom. It ends a beat wider than it started, like refocusing on the room.
+  (An aperture ring contracting inside each eye was tried alongside the sweep
+  and cut: the sweep alone is plenty, and two effects in one 1.1 s moment read
+  as busy.) It plays once per capture; the P preview fires it on entry rather
+  than re-arming per frame, which strobed.
   The sweep is driven by elapsed time (`captureAt`), *not* by the `cam`
   channel: tied to `cam` the line sits at an edge exactly when the state is
   most visible, so it is never actually seen. First version did that and

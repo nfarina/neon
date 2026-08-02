@@ -473,6 +473,9 @@ function previewNext() {
   }
   preview = p;
   badge(`preview: ${p}`);
+  // One-shot: capture is a moment, not a state, so the preview plays it once
+  // on entry rather than re-arming it every frame (which strobed).
+  if (p === "capture") capture();
 }
 
 // ============================================================ event log
@@ -707,12 +710,6 @@ function draw() {
       ctx.beginPath();
       ctx.roundRect(x, y, w, h, r);
       ctx.clip();
-      const ringR = w * (0.52 - 0.34 * cam);
-      ctx.strokeStyle = `hsla(${hue + 10}, 100%, 88%, ${0.75 * cam})`;
-      ctx.lineWidth = Math.max(1.5, B * 0.004);
-      ctx.beginPath();
-      ctx.arc(cx, y + h / 2, Math.max(1, ringR), 0, Math.PI * 2);
-      ctx.stroke();
       // One clean top-to-bottom pass, timed from the capture rather than
       // tied to `cam` — driven by cam the line sits at an edge exactly when
       // the state is most visible, which is to say never seen.
@@ -755,7 +752,6 @@ function frame(ms) {
     if (state === "awake") awakeUntil = now + AWAKE_SECS;
     const wantThink = preview === "thinking";
     if (thinking !== wantThink) window.neon.thinking(wantThink);
-    if (preview === "capture" && S.cam.v < 0.02 && S.cam.dur <= 0) capture();
     if (preview === "hearing") hearTarget = Math.max(hearTarget, 0.5 + Math.sin(now * 2.1) * 0.15);
     if (preview === "speaking") speakTarget = Math.max(speakTarget, 0.3 + (Math.sin(now * 3.7) * 0.5 + 0.5) * 0.55);
   }
