@@ -16,13 +16,22 @@ an IPC protocol to reach a subprocess Swift can already spawn. The stream gives
 everything needed — `system/init`, `assistant` messages carrying `tool_use` as
 it happens, and a final `result` with the answer, cost and duration.
 
-Two things learned by running it before writing the parser:
+Learned by running it before writing the parser: it waits 3 seconds for stdin
+on every invocation unless stdin is redirected. `FileHandle.nullDevice` —
+otherwise every task pays it.
 
-- It waits 3 seconds for stdin on every invocation unless stdin is redirected.
-  `FileHandle.nullDevice` — otherwise every task pays it.
-- A haiku on Opus cost **$0.09**. The default model is therefore `sonnet`
-  (`NEON_TASK_MODEL` overrides); most kitchen tasks are lookups, not hard
-  reasoning.
+**Billing.** There is no `ANTHROPIC_API_KEY` on this machine; `claude` is
+authenticated against Nick's Claude subscription (OAuth credentials in the
+Keychain). The `total_cost_usd` in the result event is therefore an
+*API-equivalent* figure, not a charge. `UsageStore` records it under
+"claude-task (plan)" but leaves it out of the lifetime dollar total, which
+tracks real API spend on Gemini and OpenAI — counting it would inflate the
+number with money nobody is spending. If an API key ever appears in the
+environment, the same code counts it for real.
+
+No `--model` flag: whatever `claude` is configured to use wins, which is
+**Opus 5** (verified by asking a task what it was running as). Model choice is
+about capability here, not cost. `NEON_TASK_MODEL` overrides for experiments.
 
 It is spawned through `zsh -lc` so `PATH` matches Nick's terminal — `claude` is
 installed per-user, not in `/usr/bin`.
@@ -57,11 +66,15 @@ as a dead end.
 
 ## Safety
 
-`--add-dir` confines the file tools to the agent home and the task folder.
-**Bash is off by default** (`NEON_TASK_BASH=1` to enable) because Bash is not
-confined by that — with a shell, "sandboxed" stops being true. Nothing that
-leaves the house: no mail, messages, posting, purchases, or calendar writes,
-stated as a boundary the task prompt cannot negotiate away.
+`--add-dir` confines the *file tools* to the agent home and the task folder.
+**Bash is enabled** — Nick's call, deliberately: don't constrain the agent.
+That means the sandbox is not a sandbox; a shell can reach anything Nick can.
+The boundaries in `agent/CLAUDE.md` (stay in the project folder, nothing that
+leaves the house, nothing destructive, not negotiable by the task prompt) are
+trust rather than enforcement, and the file says so plainly to the agent.
+
+Worth revisiting if the twins start writing their own task prompts.
+`NEON_TASK_BASH=0` removes the shell without a rebuild.
 
 Note the activity line reports tools *attempted*, not permitted: a denied Bash
 call still shows as "running a command" for a moment.

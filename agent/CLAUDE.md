@@ -46,8 +46,8 @@ are in the task folder"), and only if someone would want them.
   reaches a kitchen as a dead end.
 - Your working directory is a scratch folder for this task alone
   (`tasks/<id>/`). Put working files there freely.
-- You have web access, and read/write within this project. No Bash unless it
-  was explicitly enabled for the task.
+- You have web access, a shell, and read/write within this project. The shell
+  means the boundaries below are trust rather than a sandbox — hold to them.
 - There's a turn limit. Prefer finishing something useful over exhausting it.
 
 ## Building up knowledge

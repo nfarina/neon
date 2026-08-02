@@ -20,19 +20,28 @@ final class TaskRunner {
     static let home = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Code/neon-agent")
 
-    /// Sonnet by default: a haiku on Opus measured $0.09, and most kitchen
-    /// tasks are lookups rather than hard reasoning. NEON_TASK_MODEL overrides.
-    private static var model: String {
-        ProcessInfo.processInfo.environment["NEON_TASK_MODEL"] ?? "sonnet"
+    /// No --model: whatever `claude` is configured to use wins, which is
+    /// Opus 5. Tasks run against Nick's subscription rather than an API key,
+    /// so the model choice is about capability, not cost. NEON_TASK_MODEL
+    /// overrides for a deliberate experiment.
+    private static var model: String? {
+        ProcessInfo.processInfo.environment["NEON_TASK_MODEL"]
     }
 
-    /// Bash is off by default. The file tools are confined by --add-dir, but
-    /// Bash is not confined by anything — with it enabled, "sandboxed" stops
-    /// being true. NEON_TASK_BASH=1 for when a task genuinely needs a shell.
+    /// The full set, Bash included — Nick's call: don't constrain the agent.
+    /// Note this means --add-dir no longer bounds what a task can reach; the
+    /// boundaries in agent/CLAUDE.md are the real limit, and they are
+    /// instructions rather than a sandbox. NEON_TASK_BASH=0 removes it.
     private static var tools: [String] {
         var t = ["Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch", "TodoWrite"]
-        if ProcessInfo.processInfo.environment["NEON_TASK_BASH"] == "1" { t.append("Bash") }
+        if ProcessInfo.processInfo.environment["NEON_TASK_BASH"] != "0" { t.append("Bash") }
         return t
+    }
+
+    /// True when an API key is in play; absent one, `claude` is authenticated
+    /// against the Claude subscription in the Keychain.
+    private static var billedToAPI: Bool {
+        ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] != nil
     }
 
     // MARK: - Starting
@@ -65,12 +74,12 @@ final class TaskRunner {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.currentDirectoryURL = dir
-        let args = ["-p", prompt,
+        var args = ["-p", prompt,
                     "--output-format", "stream-json", "--verbose",
-                    "--model", Self.model,
                     "--add-dir", Self.home.path,
                     "--allowedTools"] + Self.tools
                  + ["--permission-mode", "acceptEdits", "--max-turns", "40"]
+        if let model = Self.model { args += ["--model", model] }
         // Through a login shell so PATH matches Nick's terminal; claude is
         // installed per-user, not in /usr/bin.
         process.arguments = ["-lc", (["claude"] + args).map(shellQuote).joined(separator: " ")]
@@ -147,10 +156,22 @@ final class TaskRunner {
                 TaskStore.shared.finish(
                     id: id, status: failed ? .failed : .done,
                     detail: text.isEmpty ? "finished with nothing to say" : text)
-                UsageStore.shared.record(engine: "claude-task", cost: cost)
+                UsageStore.shared.record(engine: Self.billedToAPI ? "claude-task"
+                                                                  : "claude-task (plan)",
+                                         cost: cost, billed: Self.billedToAPI)
+            }
+        case "rate_limit_event":
+            // Subscription work can be throttled; a task that stalls here
+            // otherwise looks like a hang with no explanation.
+            let info = obj["rate_limit_info"] as? [String: Any]
+            let status = info?["status"] as? String ?? "unknown"
+            if status != "allowed" {
+                DispatchQueue.main.async {
+                    TaskStore.shared.note(id: id, activity: "waiting on rate limit (\(status))")
+                }
             }
         default:
-            break   // system init, rate_limit_event, tool results
+            break   // system init, tool results
         }
     }
 

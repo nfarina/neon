@@ -781,8 +781,13 @@ final class UsageStore {
         }
     }
 
-    func record(engine: String, cost: Double) {
-        total += cost
+    /// `billed: false` is work that runs against Nick's Claude subscription
+    /// rather than an API key. The CLI still reports `total_cost_usd` — an
+    /// API-equivalent figure, not a charge — so counting it in the lifetime
+    /// total would inflate real spend with money nobody is spending. It stays
+    /// visible per-engine because the number is still a useful sense of scale.
+    func record(engine: String, cost: Double, billed: Bool = true) {
+        if billed { total += cost }
         byEngine[engine, default: 0] += cost
         let obj: [String: Any] = ["total": total, "byEngine": byEngine]
         if let data = try? JSONSerialization.data(withJSONObject: obj, options: .prettyPrinted) {
