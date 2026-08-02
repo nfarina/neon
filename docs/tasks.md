@@ -1,23 +1,51 @@
-# Tasks
+# Tasks and the kitchen timer
 
 Neon's hands: work she starts, watches, and reports back on. `TaskStore.swift`
-owns the state; `main.swift` owns the announce channel; the left edge of
-`web/index.html` renders it.
+owns background-task state; `main.swift` owns the announce channel; the left
+edge of `web/index.html` renders the list. The kitchen timer is separate —
+`KitchenTimer.swift`, its own pill at the bottom of the screen.
 
-Phase 1 (2026-08-02) is timers end to end. The agent runner — `claude -p` in a
-sandbox — plugs into the same lifecycle next.
+Built 2026-08-02. The agent runner — `claude -p` in a sandbox — plugs into
+`TaskStore`'s lifecycle next.
 
-## Why timers are not agent tasks
+## The kitchen timer is not a task
 
-The motivating example was "set a timer for 5 minutes", and it is exactly the
-job an agent should *not* do. `claude -p "sleep 300, then report"` parks a model
-process to watch a clock: it bills tokens, it dies with the app, and it drifts.
-A stored fire date is exact, free, and survives a relaunch.
+Timers were built as a task producer, and one kitchen test settled it: the
+timer fired, Neon woke up, and announced "quick check is done". Wrong on every
+axis. A timer going off doesn't want a conversation — it wants to be obvious in
+the room and trivial to silence. Nick's call: make it first-class, one at a
+time, with its own UI and its own alarm state.
 
-So the design splits **producers** from the **announce channel**. Timers are one
-producer, agent tasks are another, and both share one lifecycle, one on-screen
-list, and one way of speaking up. The most common kitchen request stays the
-cheapest one.
+So `KitchenTimer` is a separate singleton with no relation to `TaskStore`:
+
+- **One timer.** `set_timer` replaces whatever was running. Two timers in a
+  kitchen is a feature request, not a default.
+- **It rings itself.** No session, no wake, no tokens. An amber pill pulses at
+  the bottom of the screen and a synthesized two-tone chime repeats every 2.4 s
+  — a timer that dings once from another room may as well not have gone off.
+- **Three ways to stop it**: space (works from across the counter), a click
+  anywhere, or telling Neon to stop — the only path that costs a session, and
+  only because someone chose to talk instead of reaching over.
+- The chime plays through `AudioHub`, not `NSSound`, so echo cancellation
+  subtracts it from the mic. She has to hear "Neon, stop" over her own alarm.
+- The cursor is normally hidden; a ringing timer is the one state that brings
+  it back, because Nick asked to be able to click the thing off.
+- A running or ringing timer suppresses deep sleep. An ember-dim panel is the
+  wrong state for a countdown someone is waiting on.
+- It persists. A timer whose moment passed while the app was quit restores
+  straight into the ringing state rather than pretending it never happened.
+
+Tools: `set_timer(label, seconds)` · `check_timer()` · `stop_timer()`. The
+prompt tells her she is *not* the alarm — confirm briefly ("five minutes,
+going") and never promise to tell them when it's up.
+
+## Why background tasks still route through her
+
+`TaskStore` keeps the announce channel because work that produces a *result*
+is worth a session: there's something to say, and no screen affordance conveys
+"the thing you asked me to find out came back". The split is the point —
+completion that is an **event** (a timer) rings; completion that is an
+**answer** speaks.
 
 ## The announce channel
 
@@ -52,29 +80,33 @@ waiting for.
 
 ## Tool surface
 
-`set_timer(label, seconds)` · `list_tasks()` · `cancel_task(id)`. The label is
-2-4 words because it is what the UI shows. `list_tasks` is separate from a
-per-task check so the common "what's running?" stays one cheap call.
-
 Cap is **5 active** (`TaskStore.maxActive`) — five things running in a kitchen
-is already more than anyone can hold in their head. Over the cap, `set_timer`
-returns a refusal the model can relay rather than failing silently.
+is already more than anyone can hold in their head. Over the cap, `add` returns
+nil so the model can relay a refusal rather than failing silently. The task
+tools themselves (`start_task`/`list_tasks`/`check_task`/`cancel_task`) land
+with the runner; only the timer tools are declared today, to keep the tool list
+short.
 
 ## UI
 
-Left edge, vertically centred, mirroring the event log on the right: a state dot
-plus label, with a countdown for timers. Running pulses cyan, done is solid
-green, cancelled/failed go grey. Finished rows linger ~2 minutes (`prune()`)
-so someone walking past sees what just happened.
+Tasks: left edge, vertically centred, mirroring the event log on the right — a
+state dot plus label. Running pulses cyan, done is solid green,
+cancelled/failed go grey. Finished rows linger ~2 minutes (`prune()`) so
+someone walking past sees what just happened.
 
-The countdown ticks **in the page**, not over the bridge — the shell pushes the
-list only when it changes, and JS stamps arrival time and counts down locally.
-A running timer costs nothing per second.
+Timer: bottom centre, quiet while counting (cyan pill, large tabular clock),
+amber and pulsing when ringing, with the dismissal hint spelled out on screen.
+
+Both countdowns tick **in the page**, not over the bridge — the shell pushes
+state only when it changes and JS stamps arrival time, so a ticking clock costs
+nothing per second.
 
 ## Testing without talking
 
-`TaskStore` is pure Foundation, so it self-tests as a script: copy it, redirect
-the JSON path, exercise it, and nothing speaks in the kitchen. Verified this
-way: cap enforcement, cancel (real and bogus id), the countdown summary, firing,
-and the persisted file. The UI is verifiable with
-`swift eyes/shot.swift out.png --js 'window.neon.tasks([...])'`.
+`TaskStore` and `KitchenTimer` are (nearly) pure Foundation, so both self-test
+as scripts: copy the file, redirect the JSON path, stub `chime()` — which is
+the only part needing the audio engine — and nothing makes a sound in the
+kitchen. Verified this way: cap enforcement, cancel with real and bogus ids,
+timer set/replace/fire/repeat-chime/stop, that a second stop returns false, and
+that the persisted file is removed. The UI is verifiable with
+`swift eyes/shot.swift out.png --js 'window.neon.timer({...})'`.

@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var owwListener: OpenWakeListener?
     private var voiceSession: VoiceSession?
     private var keyMonitor: Any?
+    private var clickMonitor: Any?
     private var debugVisible = false
     private var statsTimer: Timer?
     private let display = DisplayKeeper()
@@ -75,6 +76,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return event
             }
             switch event.keyCode {
+            case 49:  // space — silence a ringing timer, from across the room
+                if self?.dismissAlarmIfRinging() == true { return nil }
+                return event
             case 53:  // esc — quits only in dev; in kiosk mode it does nothing,
                       // since a stray Esc is exactly how a guest lands on the desktop
                 if !Kiosk.enabled { NSApp.terminate(nil) }
@@ -110,6 +114,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             default:
                 return event
             }
+        }
+
+        // A click anywhere silences a ringing timer — the cursor is only
+        // visible for exactly that reason (see updateCursor).
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            self?.dismissAlarmIfRinging() == true ? nil : event
         }
 
         NSLog("Neon: SFSpeech wake triggers \(sfSpeechWakes ? "armed" : "off (custom wake model owns waking)")")
@@ -176,6 +186,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         pushTasks(TaskStore.shared.tasks)
 
+        // The kitchen timer rings on its own — no session, no announcement.
+        // The shell's job is to make it impossible to miss and trivial to
+        // silence: the cursor comes back so it can be clicked, and space
+        // works from across the counter.
+        KitchenTimer.shared.onChanged = { [weak self] t in
+            self?.pushTimer(t)
+        }
+        KitchenTimer.shared.onRingChanged = { [weak self] ringing in
+            guard let self else { return }
+            self.logEvent(ringing ? "timer" : "timer",
+                          ringing ? "ringing" : "silenced")
+            self.noteActivity()
+            self.updateCursor()
+        }
+        pushTimer(KitchenTimer.shared)
+
         // First line of the log, once the page exists to receive it.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self else { return }
@@ -223,7 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Something is cooking — literally. Deep sleep takes the backlight
         // down to an ember, which is the wrong state for a display that is
         // counting down to something someone is waiting for.
-        guard TaskStore.shared.active.isEmpty else { return }
+        guard TaskStore.shared.active.isEmpty, !KitchenTimer.shared.isActive else { return }
         guard !deepAsleep, voiceSession == nil,
               Date().timeIntervalSince(lastActivity) > deepSleepAfter else { return }
         deepAsleep = true
@@ -259,7 +285,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cursorHidden = false
 
     private func updateCursor() {
-        setCursorHidden(NSApp.isActive && !transparentMode)
+        // A ringing timer is the one moment the cursor earns its place: Nick
+        // asked to be able to click the alarm off, which needs something to
+        // click with.
+        setCursorHidden(NSApp.isActive && !transparentMode && !KitchenTimer.shared.ringing)
     }
 
     /// NSCursor.hide/unhide are a balanced pair — an unmatched hide leaves the
@@ -315,15 +344,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var row: [String: Any] = [
                 "id": t.id, "title": t.title, "status": t.status.rawValue,
             ]
-            if let due = t.dueAt, t.isActive {
-                row["remaining"] = max(0, Int(due.timeIntervalSinceNow))
-            }
             if let d = t.detail { row["detail"] = d }
             return row
         }
         guard let data = try? JSONSerialization.data(withJSONObject: rows),
               let json = String(data: data, encoding: .utf8) else { return }
         webView.evaluateJavaScript("window.neon && neon.tasks(\(json))")
+    }
+
+    private func pushTimer(_ t: KitchenTimer) {
+        var obj: [String: Any] = ["ringing": t.ringing, "label": t.label]
+        if t.dueAt != nil { obj["remaining"] = Int(t.remaining) }
+        obj["active"] = t.isActive
+        guard let data = try? JSONSerialization.data(withJSONObject: obj),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.neon && neon.timer(\(json))")
+    }
+
+    /// Space, or a click anywhere, silences a ringing timer. Returns true if
+    /// it consumed the event — while nothing is ringing, both keep their
+    /// normal meaning.
+    @discardableResult
+    private func dismissAlarmIfRinging() -> Bool {
+        guard KitchenTimer.shared.ringing else { return false }
+        KitchenTimer.shared.stop()
+        return true
     }
 
     private func triggerWake(command: String? = nil, prelude: Data? = nil,

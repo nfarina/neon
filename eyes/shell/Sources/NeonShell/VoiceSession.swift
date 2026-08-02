@@ -43,12 +43,16 @@ final class VoiceSession: NSObject {
         when someone's sweet. Don't announce it or mention the tool; just \
         let your eyes react while you talk.
 
-        You can set timers and run things in the background. Anything in \
-        square brackets is an event from the house, not somebody speaking — \
-        a timer going off, a task finishing. Announce it the way a person in \
-        the kitchen would call it out: short, natural, and about the thing \
-        itself ("pasta's done") — never the id, the word "task", or that a \
-        tool told you. If you were asleep and this woke you, announce it and \
+        There is one kitchen timer, and it rings by itself on screen — you \
+        are not the alarm. Set it, check it, and stop it when asked. If \
+        someone says "stop", "turn it off" or similar while it's ringing, \
+        that's what they mean: call \(timerStopToolName) first, then say \
+        something short.
+
+        Anything in square brackets is an event from the house, not somebody \
+        speaking. Announce it the way a person in the kitchen would call it \
+        out: short, natural, and about the thing itself — never an id, the \
+        word "task", or that a tool told you. If it woke you, announce it and \
         then call \(sleepToolName) unless someone answers you.
 
         You hear everything near the microphone, including people talking to \
@@ -344,32 +348,31 @@ final class VoiceSession: NSObject {
                 else if name == timerToolName {
                     let label = (args["label"] as? String) ?? "timer"
                     let seconds = (args["seconds"] as? Double) ?? 60
-                    let created = TaskStore.shared.addTimer(title: label, seconds: seconds)
-                    trace("task", created == nil
-                        ? "set_timer refused — \(TaskStore.maxActive) already running"
-                        : "timer \(created!.id): \(label), \(Int(seconds))s")
+                    let replaced = KitchenTimer.shared.isActive
+                    KitchenTimer.shared.start(label: label, seconds: seconds)
+                    trace("timer", "set \"\(label)\" \(Int(seconds))s"
+                        + (replaced ? " (replaced the previous one)" : ""))
                     if let resp = engine.toolResponseMessage(
                         id: id, name: name,
-                        result: created.map { "Timer \($0.id) set. You'll be told when it fires." }
-                            ?? "Can't — \(TaskStore.maxActive) things are already running. Cancel one first.") {
+                        result: replaced
+                            ? "Timer set, replacing the one that was running. It rings on its own."
+                            : "Timer set. It rings on its own — you don't need to watch it.") {
                         sendJSON(resp)
                     }
                 }
-                else if name == tasksToolName {
-                    let summary = TaskStore.shared.summary()
-                    trace("task", "list_tasks")
-                    if let resp = engine.toolResponseMessage(id: id, name: name, result: summary) {
+                else if name == timerCheckToolName {
+                    let status = KitchenTimer.shared.status()
+                    trace("timer", "check — \(status)")
+                    if let resp = engine.toolResponseMessage(id: id, name: name, result: status) {
                         sendJSON(resp)
                     }
                 }
-                else if name == cancelToolName {
-                    let taskID = (args["id"] as? String) ?? ""
-                    let ok = TaskStore.shared.cancel(id: taskID)
-                    trace("task", "cancel \(taskID) — \(ok ? "cancelled" : "not found or already finished")")
+                else if name == timerStopToolName {
+                    let stopped = KitchenTimer.shared.stop()
+                    trace("timer", stopped ? "stopped" : "stop — nothing running")
                     if let resp = engine.toolResponseMessage(
                         id: id, name: name,
-                        result: ok ? "Cancelled \(taskID)."
-                                   : "No running task with id \(taskID).") {
+                        result: stopped ? "Stopped." : "There's no timer running.") {
                         sendJSON(resp)
                     }
                 }

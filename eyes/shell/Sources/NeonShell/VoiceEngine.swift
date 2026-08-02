@@ -47,24 +47,25 @@ let emoteToolDescription = """
     Show a feeling with your eyes — they animate the emotion on screen. \
     Use this often, whenever it fits what you're saying or reacting to.
     """
-// Neon's hands. Timers are deliberately their own tool rather than something
-// an agent task does: a stored fire date is exact, free, and survives a
-// restart, where an agent watching a clock is none of those.
+// The kitchen timer: one at a time, and it rings on its own rather than
+// through Neon. She sets it, reports on it, and can silence it — but she is
+// not in the loop when it goes off.
 let timerToolName = "set_timer"
 let timerToolDescription = """
-    Set a timer or reminder. You'll be told the moment it goes off, and can \
-    announce it then — so say something brief now ("five minutes, got it") \
-    rather than promising to keep track. Label it for whatever it's for.
+    Set the kitchen timer. There is only one, so this replaces any timer \
+    already running. It rings by itself on screen when it's up — you are not \
+    involved and shouldn't promise to tell them; just confirm it briefly \
+    ("five minutes, going"). Label it for whatever it's for.
     """
-let tasksToolName = "list_tasks"
-let tasksToolDescription = """
-    List everything you currently have running — timers and background \
-    tasks — with how much time is left or what state they're in.
+let timerCheckToolName = "check_timer"
+let timerCheckToolDescription = """
+    How much time is left on the kitchen timer, or whether it's ringing now.
     """
-let cancelToolName = "cancel_task"
-let cancelToolDescription = """
-    Cancel a running timer or task by its id. Use \(tasksToolName) first if \
-    you don't know the id.
+let timerStopToolName = "stop_timer"
+let timerStopToolDescription = """
+    Stop the kitchen timer — silences it if it's ringing, cancels it if it's \
+    still counting down. Call this whenever someone says to stop, cancel, or \
+    turn it off while it's going, even if they don't use the word "timer".
     """
 
 protocol VoiceEngine {
@@ -149,19 +150,14 @@ struct GeminiEngine: VoiceEngine {
                             "type": "OBJECT",
                             "properties": [
                                 "label": ["type": "STRING",
-                                          "description": "2-4 words, shown on screen — \"pasta\", \"take out bins\""],
+                                          "description": "1-3 words, shown on screen — \"pasta\", \"tea\""],
                                 "seconds": ["type": "NUMBER",
                                             "description": "How long from now, in seconds"],
                             ],
                             "required": ["label", "seconds"],
                          ]],
-                        ["name": tasksToolName, "description": tasksToolDescription],
-                        ["name": cancelToolName, "description": cancelToolDescription,
-                         "parameters": [
-                            "type": "OBJECT",
-                            "properties": ["id": ["type": "STRING"]],
-                            "required": ["id"],
-                         ]],
+                        ["name": timerCheckToolName, "description": timerCheckToolDescription],
+                        ["name": timerStopToolName, "description": timerStopToolDescription],
                     ]],
                 ],
             ],
