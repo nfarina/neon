@@ -134,7 +134,9 @@ show() {
 
   # ---- voice recordings ----
   local vp vn
-  vp=$(count data/my_voice/positive); vn=$(count data/my_voice/negative)
+  # Outside the repo — see data/README.md.
+  local rec="${NEON_WAKE_RECORDINGS:-$HOME/.config/neon/wake}"
+  vp=$(count "$rec/my_voice/positive"); vn=$(count "$rec/my_voice/negative")
   if [ "$vp" -gt 0 ] || [ "$vn" -gt 0 ]; then
     echo; printf '  my voice: %d positive, %d negative recorded\n' "$vp" "$vn"
   fi

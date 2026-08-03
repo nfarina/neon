@@ -24,7 +24,8 @@ output/               clips, features, trained models per run (gitignored)
 logs/                 detached-run stage logs (gitignored)
 scripts/
   download_data.py    fetch the public corpora
-  record_server.py    serves recorder.html, writes 16 kHz WAVs into data/my_voice
+  record_server.py    serves recorder.html, writes 16 kHz WAVs into
+                      ~/.config/neon/wake/my_voice (outside the repo)
   recorder.html       the recorder UI
   check_voice.py      QC a batch of recordings before training on them
   inject_voice.py     trim, normalize, oversample recordings into the clip sets
@@ -68,7 +69,11 @@ The 42k-clip run absorbed 3 kills unattended.
 Synthetic speech alone does not generalise well to one specific person in one
 specific room. `./record.sh` serves a recorder at `localhost:8642` (localhost
 rather than `file://` because getUserMedia needs a secure context) that writes
-16 kHz mono WAVs into `data/my_voice/`.
+16 kHz mono WAVs into `~/.config/neon/wake/my_voice/` — **outside the repo**,
+because they are recordings of a real person's voice and this repository is
+public. `run.sh` mounts them back to `/work/data/my_voice` so nothing in the
+pipeline notices. Override the location with `NEON_WAKE_RECORDINGS`; the full
+story is in `data/README.md`.
 
 Press space, wait for "speak now", say it. It cycles delivery hints — normal,
 quieter, across the room, faster, turned away — because forty identical reads
@@ -101,10 +106,10 @@ problems:
 - if jarvis scores ~95%, our model is genuinely the weak part.
 
 ```sh
-./record.sh jarvis     # ~20 clips of "hey jarvis" -> data/ab_jarvis/
+./record.sh jarvis     # ~20 clips of "hey jarvis" -> ~/.config/neon/wake/ab_jarvis/
 python3 scripts/eval_runtime.py \
     --model output/reference/hey_jarvis_v0.1.onnx \
-    --holdout data/ab_jarvis
+    --holdout ~/.config/neon/wake/ab_jarvis
 ```
 
 Record them the way you record the neon set — same room, same spread of
@@ -277,4 +282,4 @@ Each of these was found by measurement, and each looked fine until checked.
 - **Evaluating in-distribution.** Scoring against clips from the same TTS
   generator that produced the training data reported 92.7% while the model
   needed three tries in the kitchen. Any real claim needs held-out real audio —
-  which is what `verify --real` and `data/my_voice/holdout/` exist for.
+  which is what `verify --real` and the `my_voice/holdout/` set exist for.

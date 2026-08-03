@@ -20,10 +20,24 @@ if [ "${1:-}" = "-d" ]; then
 fi
 STAGE="${1:-all}"
 
+# Voice recordings live outside the repo — they are recordings of a real
+# person's voice, and this repository is public. See data/README.md. They are
+# mounted back to the paths the pipeline has always used, so nothing inside
+# the container knows the difference.
+RECORDINGS="${NEON_WAKE_RECORDINGS:-$HOME/.config/neon/wake}"
+MOUNTS=()
+for set in my_voice ab_jarvis; do
+  [ -d "$RECORDINGS/$set" ] && MOUNTS+=(--volume "$RECORDINGS/$set:/work/data/$set")
+done
+
 # --shm-size: PyTorch DataLoader workers pass batches through /dev/shm, which
 # defaults to 64 MB in a container. Training batches (1024+ feature tensors)
 # blow past that and workers die with "Bus error"/"No space left on device".
-COMMON=(--cpus 8 --memory 20g --shm-size 4g --volume "$DIR:/work")
+# ${arr[@]+…} rather than a bare "${arr[@]}": under `set -u`, bash 3.2 — which
+# is still what /bin/bash is on macOS — treats an empty array expansion as an
+# unbound variable and aborts.
+COMMON=(--cpus 8 --memory 20g --shm-size 4g --volume "$DIR:/work"
+        ${MOUNTS[@]+"${MOUNTS[@]}"})
 
 if [ -n "$DETACH" ]; then
   mkdir -p "$DIR/logs"

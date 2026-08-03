@@ -1,8 +1,11 @@
 # wake/data — training corpora and recordings
 
 Everything in this directory except this file is gitignored: ~18 GB of public
-corpora plus Nick's voice recordings. Nothing here is a build artifact of the
-app, and nothing here needs backing up except `my_voice/`.
+corpora, all of it re-downloadable. Nothing here is a build artifact of the
+app.
+
+**The voice recordings are no longer here.** They live in
+`~/.config/neon/wake/` as of 2026-08-03 — see below.
 
 Recreate the public corpora at any time with:
 
@@ -24,21 +27,43 @@ is cheap and safe.
 | `audioset/` | 1.3 GB | — | The raw parquet shards `audioset_16k/` was decoded from. Deletable once decoded; kept only to avoid re-downloading. |
 | `fma/` | 220 MB, 240 wav | [rudraml/fma](https://huggingface.co/datasets/rudraml/fma) | 2 h of music, mixed in alongside AudioSet. |
 | `hf_cache/` | small | — | HuggingFace `datasets` scratch. Disposable. |
-| `my_voice/` | 6.1 MB | recorded locally | **The only irreplaceable thing here.** See below. |
+| `my_voice/` | — | recorded locally | **Moved out of the repo**, see below. Mounted back in at this path. |
+| `ab_jarvis/` | — | recorded locally | Same, the hey_jarvis control set. |
 
-## my_voice/ — the recordings that matter
+## my_voice/ — the recordings that matter, and where they went
+
+**They live in `~/.config/neon/wake/` now**, alongside everything else personal
+that Neon uses. Override with `NEON_WAKE_RECORDINGS`.
 
 ```text
-my_voice/positive/          50 clips of "hey neon"
-my_voice/negative/          33 clips of near-misses and other speech
-my_voice/holdout/positive/  12 clips  ) written by inject_voice.py;
-my_voice/holdout/negative/   8 clips  ) never trained on
+~/.config/neon/wake/
+  my_voice/positive/          50 clips of "hey neon"
+  my_voice/negative/          33 clips of near-misses and other speech
+  my_voice/holdout/positive/  12 clips  ) written by inject_voice.py;
+  my_voice/holdout/negative/   8 clips  ) never trained on
+  ab_jarvis/positive/         the hey_jarvis A/B control
 ```
+
+They used to be committed, deliberately: they cannot be regenerated, and git
+was the backup. That stopped being tenable when the repo went public on
+2026-08-03 — `my_voice/` is 103 recordings of a real person's voice, and
+publishing those as a side effect of open-sourcing a kitchen assistant is not
+a trade anyone would choose on purpose.
+
+**Nothing in the pipeline changed.** `run.sh` bind-mounts both sets back to
+`/work/data/my_voice` and `/work/data/ab_jarvis`, so every script inside the
+container still finds them where it always did. The host-side scripts
+(`record_server.py`, `eval_runtime.py`, `status.sh`) resolve
+`~/.config/neon/wake` directly.
+
+**They are no longer backed up by being committed.** That was a real benefit of
+the old arrangement and it is gone; `~/.config/` needs to be in whatever backs
+up this machine. If you clear that directory the recordings are gone, and with
+them the only real-voice measurement this pipeline has.
 
 Captured with `./record.sh`, which serves a browser recorder at
 `localhost:8642` and writes 16 kHz mono WAVs straight into `positive/` and
-`negative/`. These cannot be regenerated — **if you clear this directory the
-recordings are gone.**
+`negative/`.
 
 `holdout/` is a copy written during injection, not a separate recording
 session: a ~25% split excluded from training so there is one honest measure of

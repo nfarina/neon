@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import shutil
 from datetime import datetime, timezone
@@ -27,7 +28,13 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = Path(__file__).resolve().parent / "recorder.html"
-VOICE_DIR = ROOT / "data" / "my_voice"      # replaced by --voice-dir in main()
+
+# Recordings land outside the repo: they are recordings of a real person's
+# voice, and this repository is public. run.sh mounts this back to
+# /work/data/my_voice so the pipeline inside the container is unchanged.
+RECORDINGS = Path(os.environ.get("NEON_WAKE_RECORDINGS",
+                                 Path.home() / ".config" / "neon" / "wake"))
+VOICE_DIR = RECORDINGS / "my_voice"         # replaced by --voice-dir in main()
 PHRASE = "hey neon"                          # replaced by --phrase in main()
 KINDS = ("positive", "negative")
 SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+\.wav$")
@@ -168,12 +175,14 @@ def main():
     ap.add_argument("--port", type=int, default=8642)
     ap.add_argument("--phrase", default=PHRASE, help='phrase to prompt for')
     ap.add_argument("--voice-dir", default=None,
-                    help="destination, relative to wake/ (default data/my_voice)")
+                    help="destination; relative paths resolve against the "
+                         f"recordings directory ({RECORDINGS})")
     args = ap.parse_args()
 
     PHRASE = args.phrase
     if args.voice_dir:
-        VOICE_DIR = (ROOT / args.voice_dir).resolve()
+        VOICE_DIR = (RECORDINGS / args.voice_dir).resolve()
+    print(f"recording into {VOICE_DIR}")
 
     for k in KINDS:
         (VOICE_DIR / k).mkdir(parents=True, exist_ok=True)

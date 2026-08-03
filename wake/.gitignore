@@ -7,12 +7,14 @@
 data/*
 !data/README.md
 
-# Recordings are committed. A few MB each, and unlike the corpora they cannot
-# be regenerated — my_voice/ is the highest-value input the pipeline has, and
-# ab_jarvis/ is the control set for comparing against openWakeWord's pretrained
-# model on the same voice, mic and room.
-!data/my_voice/
-!data/ab_jarvis/
+# Recordings used to be committed here — they cannot be regenerated, so
+# keeping them in git was the backup. They moved to ~/.config/neon/wake/ on
+# 2026-08-03, when this repo went public: my_voice/ is 103 recordings of a
+# real person's voice, which is not something to publish as a side effect of
+# open-sourcing a kitchen assistant. run.sh mounts them back into the
+# container at the old paths, so nothing in the pipeline changed.
+#
+# They are no longer backed up by committing them. See data/README.md.
 
 output/
 logs/

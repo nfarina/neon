@@ -34,7 +34,11 @@ import wave
 SR = 16000
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BIN = os.path.join(REPO, "eyes/shell/.build/release/NeonShell")
-HOLDOUT = os.path.join(REPO, "wake/data/my_voice/holdout")
+# Recordings live outside the repo (see wake/data/README.md) — they are
+# recordings of a real person's voice and this repository is public.
+RECORDINGS = os.environ.get("NEON_WAKE_RECORDINGS",
+                            os.path.expanduser("~/.config/neon/wake"))
+HOLDOUT = os.path.join(RECORDINGS, "my_voice/holdout")
 
 
 def read_wav(p):
@@ -65,8 +69,9 @@ def main():
     ap.add_argument("--lead", type=float, default=4.0, help="seconds of noise lead-in")
     ap.add_argument("--holdout", default=HOLDOUT,
                     help="directory containing positive/ and negative/ "
-                         "(default the my_voice holdout; use wake/data/ab_jarvis "
-                         "to score the pretrained hey_jarvis control)")
+                         f"(default the my_voice holdout under {RECORDINGS}; "
+                         "use the ab_jarvis set beside it to score the "
+                         "pretrained hey_jarvis control)")
     args = ap.parse_args()
     holdout = os.path.abspath(os.path.expanduser(args.holdout))
 
