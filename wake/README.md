@@ -10,6 +10,17 @@ speech, has no macOS support — which is the whole reason for the container. Th
 project directory mounts at `/work` inside it, so paths in `config/` and
 `scripts/` are container paths.
 
+**Training happens on Nick's MacBook Air, not on the kitchen Mac.** It wants 8
+cores, 20 GB of RAM and ~18 GB of corpora for hours at a time, which is not
+what the machine running Neon is for. So the voice recordings in
+`~/.config/neon/wake/` live on the Air and have no reason to exist on the Neo —
+the kitchen only ever needs the finished `models/hey_neon.onnx`, which is
+committed here and ships inside the app bundle.
+
+Note what is and isn't in git: the trained model **is** (it is the artifact
+everyone needs, and weights are not recoverable audio); the recordings it was
+trained from are **not** (see `data/README.md`).
+
 ## Layout
 
 ```text

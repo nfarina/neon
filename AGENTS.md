@@ -139,7 +139,12 @@ shipping it to anyone who wants one.
   and it is a dictionary word, which makes wake-word recognition more
   reliable than "Neo" was.
 - Neon development stays in `/Users/nick/Code/neon`.
-- Unrelated development stays on the MacBook Air.
+- Unrelated development stays on the MacBook Air — with one Neon exception:
+  **wake-model training runs on the Air**, not the Neo. It needs 8 cores, 20 GB
+  of RAM and ~18 GB of corpora for hours, which the kitchen machine is not for.
+  The voice recordings therefore live in `~/.config/neon/wake/` on the Air and
+  are not needed on the Neo, which only ever loads the finished model. Releases
+  are cut from the Air too, since that is where the Developer ID certificate is.
 - The project will favor the existing Command Line Tools and Homebrew setup
   before considering full Xcode.
 - The ambient eyes and spoken conversation are the likely first implementation
