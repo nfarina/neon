@@ -141,6 +141,20 @@ Wake-word detection is [wake.md](wake.md); the renderer is [eyes.md](eyes.md).
   the E-key cycle — gemini → gemini25 → openai — with same audio rates
   ($3/$12) and cheaper text ($0.50/$2.00). First solo test: clean toolCall,
   no verbalization.
+- **A captured photo must arrive as its own completed user turn, not as
+  `realtimeInput.video`.** Sending the frame alongside the tool response loses
+  a race — the tool response starts generation and the frame lands after — so
+  she answers from the system prompt instead of the picture. In the kitchen
+  that looked like her describing the kitchen while the camera pointed at the
+  porch, then getting it right the instant she was asked "are you sure?".
+  `voice/gemini-image-order-test.mjs` tested four orderings against the same
+  model with an image reading PURPLE GIRAFFE 7 and a prompt insisting she lives
+  in a kitchen: `realtimeInput.video` answered blind ("a person's face and a
+  bookshelf" — neither present), `turnComplete:false` truncated the reply, and
+  answering the tool with "the photo is coming in the very next message, say
+  nothing until you have seen it" followed by the image as its own turn read
+  the text back correctly. That ordering also comes back *empty* on the
+  tool-response turn, so nothing wrong is spoken while the image is in flight.
 - Camera note: both Gemini engines accept 1 FPS video frames via
   `realtimeInput.video`, so the camera work is not gated on the 3.1-vs-2.5
   choice.

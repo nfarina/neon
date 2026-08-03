@@ -129,12 +129,17 @@ protocol VoiceEngine {
     func cost(_ u: VoiceUsage, elapsed: TimeInterval) -> Double
     /// Wire message for one JPEG camera frame; nil if the engine takes no video.
     func videoMessage(_ base64: String) -> [String: Any]?
+    /// A JPEG delivered as its own completed user turn, which is the only
+    /// ordering that gets the image into context *before* the model answers
+    /// (see voice/gemini-image-order-test.mjs). nil if unsupported.
+    func imageTurnMessage(_ base64: String, text: String) -> [String: Any]?
     /// Reply to a tool call; nil if the engine doesn't take tool responses.
     func toolResponseMessage(id: String?, name: String, result: String) -> [String: Any]?
 }
 
 extension VoiceEngine {
     func videoMessage(_ base64: String) -> [String: Any]? { nil }
+    func imageTurnMessage(_ base64: String, text: String) -> [String: Any]? { nil }
     func toolResponseMessage(id: String?, name: String, result: String) -> [String: Any]? { nil }
 }
 
@@ -258,6 +263,16 @@ struct GeminiEngine: VoiceEngine {
                 "turns": [["role": "user", "parts": [["text": greeting]]]],
                 "turnComplete": true,
             ],
+        ]]
+    }
+
+    func imageTurnMessage(_ base64: String, text: String) -> [String: Any]? {
+        ["clientContent": [
+            "turns": [["role": "user", "parts": [
+                ["inlineData": ["mimeType": "image/jpeg", "data": base64]],
+                ["text": text],
+            ]]],
+            "turnComplete": true,
         ]]
     }
 

@@ -600,33 +600,56 @@ final class VoiceSession: NSObject {
         cam.start()
     }
 
+    /// Delivering the frame is an ordering problem, not a plumbing one.
+    ///
+    /// Sending it as `realtimeInput.video` alongside the tool response — the
+    /// obvious reading of the API — loses a race: the tool response starts
+    /// generation and the frame lands after, so she answers from the system
+    /// prompt instead of the picture. In the kitchen that looked like her
+    /// describing the kitchen while the camera pointed at the porch, then
+    /// getting it right the moment she was asked "are you sure?".
+    ///
+    /// `voice/gemini-image-order-test.mjs` settled it against the same model:
+    /// answer the tool with "wait for it", then send the photo as its own
+    /// completed user turn. The tool response still triggers a turn, but the
+    /// model says nothing in it, and the reply that follows is about the
+    /// actual image.
     private func handleCapture(id: String?) {
         onCapture()   // eyes narrow and focus, whether or not a frame exists
-        if let frame = latestFrame, let msg = engine.videoMessage(frame) {
-            NSLog("Neon voice: capture_image — sending frame (\(frame.count / 1024) KB)")
-            trace("tool", "capture_image → frame sent (\(frame.count / 1024) KB)")
-            sendJSON(msg)
-            // Who's in shot, decided locally. Same hedge as the voice hint,
-            // and a second independent signal about the same question: voice
-            // works in the dark, faces work when someone is silent.
-            var note = "Image captured — it's arriving as a video frame now."
-            if !PersonStore.shared.people.isEmpty,
-               let image = FaceID.image(fromBase64JPEG: frame),
-               let who = FaceID.shared.describe(in: image) {
-                trace("who", "face: \(who.phrase) · \(who.detail)")
-                note += " The face in it \(who.phrase) — treat that as a guess, "
-                     + "the same way you would recognizing someone across a room."
-            }
-            if let resp = engine.toolResponseMessage(
-                id: id, name: captureToolName, result: note) {
-                sendJSON(resp)
-            }
-        } else if let resp = engine.toolResponseMessage(
-            id: id, name: captureToolName, result: "Camera unavailable right now.") {
+        guard let frame = latestFrame,
+              let turn = engine.imageTurnMessage(frame, text: capturePrompt(for: frame)) else {
             NSLog("Neon voice: capture_image — no frame available")
             trace("tool", "capture_image → no frame available")
+            if let resp = engine.toolResponseMessage(
+                id: id, name: captureToolName, result: "Camera unavailable right now.") {
+                sendJSON(resp)
+            }
+            return
+        }
+        NSLog("Neon voice: capture_image — sending frame (\(frame.count / 1024) KB)")
+        trace("tool", "capture_image → frame sent (\(frame.count / 1024) KB)")
+        if let resp = engine.toolResponseMessage(
+            id: id, name: captureToolName,
+            result: "The photo is coming in the very next message. Say nothing "
+                  + "until you have seen it, then answer from what is actually in it.") {
             sendJSON(resp)
         }
+        sendJSON(turn)
+    }
+
+    /// Text riding alongside the photo, including who the face looks like —
+    /// decided locally, and hedged the same way the voice hint is.
+    private func capturePrompt(for frame: String) -> String {
+        var text = "Here is the photo from your camera, taken just now. Describe "
+            + "what is actually in it — don't assume you're in the kitchen."
+        if !PersonStore.shared.people.isEmpty,
+           let image = FaceID.image(fromBase64JPEG: frame),
+           let who = FaceID.shared.describe(in: image) {
+            trace("who", "face: \(who.phrase) · \(who.detail)")
+            text += " The face in it \(who.phrase) — treat that as a guess, the "
+                 + "way you would recognizing someone across a room."
+        }
+        return text
     }
 
     private func sendMic(_ buffer: AVAudioPCMBuffer) {
