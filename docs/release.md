@@ -46,6 +46,21 @@ creates the GitHub release with the zip attached, regenerates
 command if something goes wrong halfway; the script is a sequence, not a state
 machine.
 
+**The feed goes live a few minutes after the script finishes.** Pages has to
+rebuild, and then Fastly caches the result for around ten minutes — so
+fetching the appcast straight after a release can return the *previous*
+version and look like the release silently failed. It hasn't; check with a
+cache-buster before believing it:
+
+```sh
+curl -sS "https://nfarina.github.io/neon/appcast.xml?cb=$(date +%s)" | head -8
+gh api repos/nfarina/neon/pages/builds/latest --jq .status   # "built"
+```
+
+The same delay means a client that checked in the last few minutes may not see
+a new release immediately. Nothing to fix — just don't stand at the kitchen
+counter pressing Check for Updates and concluding it's broken.
+
 ## What `--release` changes
 
 `eyes/shell/build.sh` has two modes and the kitchen only ever uses the first.
