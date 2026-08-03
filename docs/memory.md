@@ -53,6 +53,18 @@ afterwards would land a turn late — noisy, and usually about the previous
 question. Hence the wake-utterance path, which is the one moment we do have
 text ahead of the model.
 
+## Watching it work
+
+Memory logs to the event log (**L**) under the `memory` kind: the digest size
+at session start, any wake-utterance search, every `remember` and every
+`recall` with its hit count.
+
+The digest line matters more than it looks. **Most questions never reach
+`recall`** — the salient memories are already in the system prompt, so she
+answers from what she "knows" and no tool call happens. Without that line
+logged, "she recalled nothing" and "she didn't need to" are indistinguishable,
+and it looks like the tool is broken when it is simply unnecessary.
+
 ## Dreaming
 
 Live memory is written mid-conversation, one fact at a time, by a model with

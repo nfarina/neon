@@ -189,6 +189,12 @@ final class VoiceSession: NSObject {
         // Memory arrives two ways. The digest is what she carries into every
         // conversation without being asked — recent and often-used facts.
         if let digest = MemoryStore.shared.digest() {
+            // Log what she starts the conversation already knowing. Without
+            // this it's impossible to tell "she recalled nothing" from "she
+            // didn't need to" — the digest answers most questions before a
+            // recall would ever be called.
+            trace("memory", "digest: \(digest.split(separator: "\n").count) "
+                + "memories in the prompt")
             system += """
 
 
@@ -205,6 +211,8 @@ final class VoiceSession: NSObject {
             let hits = MemoryStore.shared.search(opening, limit: 3)
                 .filter { digestMisses($0, in: system) }
             if !hits.isEmpty {
+                trace("memory", "wake search \"\(opening.prefix(40))\" — "
+                    + "\(hits.count) added beyond the digest")
                 system += "\n\nPossibly relevant to what they're about to ask:\n"
                     + hits.map { "- \($0.text)" }.joined(separator: "\n")
             }
