@@ -6,16 +6,16 @@ import Foundation
 // voice, or only by both at once is a question you can only answer by seeing
 // the two numbers side by side.
 //
-// Enrolment images are never written to disk. The embeddings are computed from
+// Enrollment images are never written to disk. The embeddings are computed from
 // frames in memory and the frames are dropped; there is no reason to keep a
 // library of photographs of somebody's children.
-enum Enrolment {
+enum Enrollment {
     static func run(name: String, faceSeconds: TimeInterval = 8,
                     voiceSeconds: TimeInterval = 12) {
         print("\nEnrolling \(name).\n")
 
-        let faces = enrolFaces(name: name, seconds: faceSeconds)
-        let voice = enrolVoice(name: name, seconds: voiceSeconds)
+        let faces = enrollFaces(name: name, seconds: faceSeconds)
+        let voice = enrollVoice(name: name, seconds: voiceSeconds)
 
         guard faces || voice else {
             print("\nNothing enrolled — no camera and no microphone.")
@@ -24,7 +24,7 @@ enum Enrolment {
         report(name: name)
     }
 
-    /// `NEON_FACEID_TEST=1` — no enrolment, just proof the chain works.
+    /// `NEON_FACEID_TEST=1` — no enrollment, just proof the chain works.
     /// Frame-to-frame similarity for one person is the real check: detection,
     /// landmarks, alignment and embedding all have to be right for the same
     /// face to land in the same place twice. Broken alignment still produces
@@ -75,7 +75,7 @@ enum Enrolment {
 
     // MARK: - Faces
 
-    private static func enrolFaces(name: String, seconds: TimeInterval) -> Bool {
+    private static func enrollFaces(name: String, seconds: TimeInterval) -> Bool {
         guard FaceID.shared.isAvailable else {
             print("skipping faces: no model in ~/.config/neon/faceid/")
             return false
@@ -124,7 +124,7 @@ enum Enrolment {
 
     // MARK: - Voice
 
-    private static func enrolVoice(name: String, seconds: TimeInterval) -> Bool {
+    private static func enrollVoice(name: String, seconds: TimeInterval) -> Bool {
         guard VoiceID.shared.isAvailable else {
             print("skipping voice: no model in ~/.config/neon/voiceid/")
             return false

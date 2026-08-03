@@ -183,12 +183,12 @@ Nick"), so the agent can pitch an answer at whoever asked.
 
 ## UI
 
-Tasks: left edge, vertically centred, mirroring the event log on the right — a
+Tasks: left edge, vertically centered, mirroring the event log on the right — a
 state dot plus label. Running pulses cyan, done is solid green,
-cancelled/failed go grey. Finished rows linger ~2 minutes (`prune()`) so
+cancelled/failed go gray. Finished rows linger ~2 minutes (`prune()`) so
 someone walking past sees what just happened.
 
-Timer: bottom centre, quiet while counting (cyan pill, large tabular clock),
+Timer: bottom center, quiet while counting (cyan pill, large tabular clock),
 amber and pulsing when ringing, with the dismissal hint spelled out on screen.
 
 Both countdowns tick **in the page**, not over the bridge — the shell pushes

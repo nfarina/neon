@@ -1,8 +1,8 @@
 # People
 
 Who Neon is talking to. `PersonStore.swift` holds the identities;
-`VoiceID.swift` + `Fbank.swift` recognise voices; `FaceID.swift` recognises
-faces; `Enrolment.swift` is the one sitting that captures both.
+`VoiceID.swift` + `Fbank.swift` recognize voices; `FaceID.swift` recognizes
+faces; `Enrollment.swift` is the one sitting that captures both.
 
 ## Two signals, one question
 
@@ -13,7 +13,7 @@ signal exists — Sam and Alex may be hard to separate by voice and easy by
 face.
 
 One record per person in `~/.config/neon/people.json` (migrated automatically
-from the older `voices.json`), outside the repo. **Enrolment images are never
+from the older `voices.json`), outside the repo. **Enrollment images are never
 written to disk**: embeddings are computed from frames in memory and the frames
 are dropped. There is no reason to keep a library of photographs of somebody's
 children.
@@ -34,10 +34,10 @@ Alignment is the part that silently ruins everything: ArcFace embeds a 112×112
 crop warped onto a canonical 5-point layout (eyes, nose, mouth corners), and an
 unaligned crop still yields 512 confident-looking numbers that match nothing.
 The warp is the least-squares *similarity* transform, which has a closed form
-in complex arithmetic — `a = Σ(conj(xᵢ)·yᵢ)/Σ|xᵢ|²` over centred points — so no
+in complex arithmetic — `a = Σ(conj(xᵢ)·yᵢ)/Σ|xᵢ|²` over centered points — so no
 SVD is needed and a face can never be mirrored.
 
-Vision reports landmarks normalised to the face box in a bottom-left origin;
+Vision reports landmarks normalized to the face box in a bottom-left origin;
 both have to be undone to get image pixels.
 
 ### Checking it without enrolling anyone
@@ -60,9 +60,27 @@ observations via `inputFaceObservations` so it scores the same faces instead of
 re-detecting. Until that was fixed, "keep the best six frames by quality" was
 keeping an arbitrary six. A metric with no variance at all is the tell.
 
-Enrolment also runs the camera at 4 fps rather than the session's 1 fps
+Enrollment also runs the camera at 4 fps rather than the session's 1 fps
 (`CameraFeed.interval`) — choosing six frames from five is not a choice, and
-enrolment frames never leave the machine so there is no token cost to them.
+enrollment frames never leave the machine so there is no token cost to them.
+
+## Watching it work
+
+Every identity judgment appears in the event log (**L**) under its own `who`
+kind, in two halves: the hedge Neon actually hears, then the numbers behind it.
+
+```
+who  voice: sounds like Nick · Nick 0.71, margin 0.19
+who  face: looks like Nick · Nick 0.68, margin 0.31, quality 0.83
+who  face: looks like Sam or Alex — too close to tell · Sam 0.55, margin 0.03 (ambiguous)
+```
+
+The phrase is what she gets; the numbers are how you decide whether to trust
+it. **Margin matters more than score** — a 0.55 that beats the runner-up by
+0.03 is a coin flip, and gets reported as ambiguous rather than picked.
+
+The debug overlay (**D**) carries the latest judgment on a `who` row, since the
+log scrolls and "who does she think this is right now" is a standing question.
 
 ## Voices
 
@@ -90,7 +108,7 @@ These models take Kaldi-style 80-bin log-mel filterbank features, not waveform:
 sherpa-onnx and friends do that step outside the ONNX graph, so a Swift host
 has to as well. `Fbank.swift` implements it — 25 ms frames, 10 ms hop, Povey
 window, pre-emphasis 0.97, DC removal, 512-point FFT, 80 triangular mel filters
-from 20 Hz to Nyquist, natural log, then cepstral mean normalisation (CAM++
+from 20 Hz to Nyquist, natural log, then cepstral mean normalization (CAM++
 ships `feature_normalize_type: mean`).
 
 Those constants are not knobs. Get one wrong and you still get 192 numbers that
@@ -187,7 +205,7 @@ not knowing.
 - `sounds like Sam or Alex — too close to tell` (top two within 0.06)
 - `doesn't sound like anyone you know`
 
-The prompt tells her to use it the way a person uses recognising a voice: greet
+The prompt tells her to use it the way a person uses recognizing a voice: greet
 them by name if it fits, keep it to herself otherwise, never announce that she
 identified anyone, and drop it if what they say contradicts it.
 

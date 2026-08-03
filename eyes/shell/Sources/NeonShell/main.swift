@@ -238,7 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     //
     // Ambient kitchen conversation deliberately does not count as activity:
     // wake-listener transcripts fire for any speech in the room, and dinner
-    // three metres away should not light the display back up. Only being
+    // three meters away should not light the display back up. Only being
     // spoken to (a wake), a live session, or the keyboard counts.
 
     private let deepSleepAfter = ProcessInfo.processInfo.environment["NEON_DEEPSLEEP_SECS"]
@@ -420,8 +420,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let samples: [Float] = pcm.withUnsafeBytes {
             $0.bindMemory(to: Int16.self).map { Float($0) }
         }
-        return VoiceID.shared.describe(samples)
+        guard let who = VoiceID.shared.describe(samples) else { return nil }
+        lastWho = "\(who.phrase) · \(who.detail)"
+        logEvent("who", "voice: \(lastWho)")
+        return who.phrase
     }
+
+    /// Latest identity judgment, for the debug overlay — the event log scrolls,
+    /// and "who does she think this is right now" is a standing question.
+    private var lastWho = ""
 
     private func pushTimer(_ t: KitchenTimer) {
         var obj: [String: Any] = ["ringing": t.ringing, "label": t.label]
@@ -544,7 +551,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func pushStats() {
-        let pairs: [[String]]
+        var pairs: [[String]]
         if let session = voiceSession {
             pairs = session.statsPairs()
         } else {
@@ -557,6 +564,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ["mac hears", String(wakeHeard.suffix(70))],
             ]
         }
+        if !lastWho.isEmpty { pairs.append(["who", lastWho]) }
         if let data = try? JSONSerialization.data(withJSONObject: pairs) {
             let json = String(decoding: data, as: UTF8.self)
             webView.evaluateJavaScript("window.neon && neon.stats(\(json))")
@@ -570,7 +578,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ~28 ms, against a socket connect of roughly a second — cheap enough
         // to resolve before the session opens rather than a turn late.
         let hint = speakerHint(prelude: prelude, from: preludeFrom)
-        if let hint { logEvent("wake", hint) }
         // The wake listener keeps running through the session — AudioHub fans
         // the mic out to both, and echo cancellation keeps Neon's own voice
         // out of it. No recognition-restart dead zone at session end, so she
@@ -596,6 +603,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.webView.evaluateJavaScript("window.neon && neon.emote('\(safe)')")
         }
         session.onEvent = { [weak self] kind, text in
+            if kind == "who" { self?.lastWho = text }
             self?.logEvent(kind, text)
         }
         session.onClosed = { [weak self] reason in
@@ -671,19 +679,19 @@ if let spec = ProcessInfo.processInfo.environment["NEON_TASK_TEST"] {
     exit(0)
 }
 
-// Pipeline check with no enrolment: NEON_FACEID_TEST=1
+// Pipeline check with no enrollment: NEON_FACEID_TEST=1
 if ProcessInfo.processInfo.environment["NEON_FACEID_TEST"] != nil {
-    Enrolment.faceCheck()
+    Enrollment.faceCheck()
     exit(0)
 }
 
 // One sitting per person, both modalities: NEON_ENROL=Sam
 if let name = ProcessInfo.processInfo.environment["NEON_ENROL"] {
-    Enrolment.run(name: name)
+    Enrollment.run(name: name)
     exit(0)
 }
 
-// Voice enrolment from files, for the offline harness:
+// Voice enrollment from files, for the offline harness:
 // NEON_VOICEID_ENROL="Nick=a.wav,b.wav"
 if let spec = ProcessInfo.processInfo.environment["NEON_VOICEID_ENROL"] {
     let parts = spec.split(separator: "=", maxSplits: 1)

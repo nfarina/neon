@@ -27,7 +27,7 @@ scripts/
   record_server.py    serves recorder.html, writes 16 kHz WAVs into data/my_voice
   recorder.html       the recorder UI
   check_voice.py      QC a batch of recordings before training on them
-  inject_voice.py     trim, normalise, oversample recordings into the clip sets
+  inject_voice.py     trim, normalize, oversample recordings into the clip sets
   repair_clips.py     delete clips damaged by an interrupted write
   export_tflite.py    ONNX -> TFLite (train.py's own conversion is broken)
   verify_model.py     detection / false-accept rates across thresholds
@@ -151,7 +151,7 @@ optimistic: `predict_clip` starts from zero-primed buffers, and zeros make any
 speech score high while they drain. Reports 91.7% at threshold 0.5.
 
 **Held-out real recordings through the actual Swift listener** — the number
-that predicts behaviour in the kitchen, because it is the code that runs there:
+that predicts behavior in the kitchen, because it is the code that runs there:
 
 ```sh
 swift build -c release --package-path eyes/shell
@@ -268,7 +268,7 @@ Each of these was found by measurement, and each looked fine until checked.
   truth, and default to timid.
 - **Level mismatch.** Synthetic clips peak at −6 dBFS, real recordings at −17 to
   −34, and augmentation only ever attenuates. Loudness would have become a
-  reliable cue separating real from synthetic. Recordings are normalised at
+  reliable cue separating real from synthetic. Recordings are normalized at
   injection, which discards only absolute level and keeps what distance actually
   contributes: reverb, spectral tilt, SNR.
 - **Trigger noise.** The keystroke that starts a recording is a broadband

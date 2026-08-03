@@ -54,7 +54,7 @@ enum Fbank {
     private static let fft = vDSP_create_fftsetup(vDSP_Length(log2(Double(fftSize))), FFTRadix(kFFTRadix2))!
 
     /// Samples are int16-range floats (what AudioRing and the wake pipeline
-    /// carry). Returns `[frames][80]`, mean-normalised over time — CAM++ ships
+    /// carry). Returns `[frames][80]`, mean-normalized over time — CAM++ ships
     /// with feature_normalize_type "mean", and skipping it costs real accuracy.
     static func features(_ samples: [Float]) -> [[Float]] {
         guard samples.count >= frameLength else { return [] }
@@ -68,7 +68,7 @@ enum Fbank {
 
         for f in 0..<frameCount {
             var frame = Array(samples[(f * frameShift)..<(f * frameShift + frameLength)])
-            // Kaldi order: remove DC, pre-emphasise, then window.
+            // Kaldi order: remove DC, pre-emphasize, then window.
             var mean: Float = 0
             vDSP_meanv(frame, 1, &mean, vDSP_Length(frameLength))
             var negMean = -mean
@@ -110,7 +110,7 @@ enum Fbank {
             out.append(melFrame)
         }
 
-        // Cepstral mean normalisation over the utterance.
+        // Cepstral mean normalization over the utterance.
         guard !out.isEmpty else { return out }
         for d in 0..<melBins {
             var sum: Float = 0

@@ -58,7 +58,7 @@ being comparable.
 Two properties of the recordings matter more than their count:
 
 - **Acoustic variety.** Distance, angle, pace, and volume. Absolute loudness is
-  normalised away at injection, but the reverb and spectral character of
+  normalized away at injection, but the reverb and spectral character of
   standing across the room is exactly what the synthetic clips lack.
 - **Near-miss negatives.** "hey leon", "hey neo", "neon" alone, "hey" alone.
   These teach the phrase boundary. General speech is much less informative.

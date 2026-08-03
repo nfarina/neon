@@ -16,7 +16,7 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private static let interval: TimeInterval = 1.0
 
     /// Seconds between delivered frames. 1 fps is right during a session (a
-    /// frame is ~250 tokens if it's sent), but enrolment wants a pool to pick
+    /// frame is ~250 tokens if it's sent), but enrollment wants a pool to pick
     /// the best shots from, and those frames never leave the machine.
     var interval = CameraFeed.interval
 

@@ -70,7 +70,7 @@ final class FaceID {
 
     struct Face {
         let embedding: [Float]
-        /// Vision's own view of how usable the shot is (0…1). Enrolment uses
+        /// Vision's own view of how usable the shot is (0…1). Enrollment uses
         /// it to throw away blinks, blur and bad angles rather than baking
         /// them into someone's identity.
         let quality: Float
@@ -111,13 +111,13 @@ final class FaceID {
     }
 
     /// The five landmarks ArcFace aligns on, in image pixel coordinates.
-    /// Vision reports landmarks normalised to the face box, in a
+    /// Vision reports landmarks normalized to the face box, in a
     /// bottom-left origin — both have to be undone.
     private func fivePoints(_ face: VNFaceObservation, imageSize: CGSize) -> [CGPoint]? {
         guard let marks = face.landmarks,
               let leftEye = marks.leftEye, let rightEye = marks.rightEye,
               let nose = marks.nose, let lips = marks.outerLips else { return nil }
-        func centre(_ region: VNFaceLandmarkRegion2D) -> CGPoint {
+        func center(_ region: VNFaceLandmarkRegion2D) -> CGPoint {
             let pts = region.normalizedPoints
             guard !pts.isEmpty else { return .zero }
             let sx = pts.reduce(0) { $0 + $1.x }, sy = pts.reduce(0) { $0 + $1.y }
@@ -134,7 +134,7 @@ final class FaceID {
         let leftCorner = lipPts.min { $0.x < $1.x }!
         let rightCorner = lipPts.max { $0.x < $1.x }!
         return [
-            toImage(centre(leftEye)), toImage(centre(rightEye)), toImage(centre(nose)),
+            toImage(center(leftEye)), toImage(center(rightEye)), toImage(center(nose)),
             toImage(CGPoint(x: CGFloat(leftCorner.x), y: CGFloat(leftCorner.y))),
             toImage(CGPoint(x: CGFloat(rightCorner.x), y: CGFloat(rightCorner.y))),
         ]
@@ -147,7 +147,7 @@ final class FaceID {
     /// The transform is the least-squares *similarity* (rotation, uniform
     /// scale, translation — no reflection, no shear), which has a closed form
     /// in complex arithmetic: treat each point as x+iy, and the best `a` in
-    /// `y = a·x + b` is Σ(conj(xᵢ)·yᵢ)/Σ|xᵢ|² over centred points. That avoids
+    /// `y = a·x + b` is Σ(conj(xᵢ)·yᵢ)/Σ|xᵢ|² over centered points. That avoids
     /// the SVD an Umeyama fit would otherwise need, and cannot mirror a face.
     private func align(_ image: CGImage, from points: [CGPoint]) -> [Float]? {
         let src = points.map { (Double($0.x), Double($0.y)) }
@@ -190,7 +190,7 @@ final class FaceID {
                 if ix >= 0, ix < w, iy >= 0, iy < h {
                     let o = iy * bpr + ix * bpp
                     // CGImage from a JPEG here is BGRA or RGBA; both put the
-                    // three colour bytes first in memory order R,G,B for
+                    // three color bytes first in memory order R,G,B for
                     // .byteOrder32Big|.noneSkipLast, which is what we request.
                     r = Float(bytes[o]); g = Float(bytes[o + 1]); b = Float(bytes[o + 2])
                 }
@@ -231,16 +231,12 @@ final class FaceID {
     // MARK: - Recognition
 
     /// Hedged, like the voice hint: "looks like Alex", never an assertion.
-    func describe(in image: CGImage) -> String? {
+    func describe(in image: CGImage) -> (phrase: String, detail: String)? {
         guard let face = faces(in: image).first else { return nil }
-        guard let match = PersonStore.shared.matchFace(face.embedding,
-                                                       threshold: Self.threshold) else {
-            return "doesn't look like anyone you know"
-        }
-        if match.ambiguous, let other = match.runnerUp {
-            return "looks like \(match.name) or \(other) — too close to tell"
-        }
-        return "looks like \(match.name)"
+        let match = PersonStore.shared.matchFace(face.embedding, threshold: Self.threshold)
+        return (PersonStore.phrase(match, verb: "look"),
+                PersonStore.detail(match)
+                    + String(format: ", quality %.2f", face.quality))
     }
 
     /// Decodes a base64 JPEG (what CameraFeed carries) into a bitmap laid out

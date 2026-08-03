@@ -1,7 +1,7 @@
 # Eyes
 
 The face and the shell around it: the canvas renderer and its animation
-channels, emotes, keyboard shortcuts, overlays, kiosk behaviour, and the
+channels, emotes, keyboard shortcuts, overlays, kiosk behavior, and the
 build scripts. The first ambient-assistant implementation, under `eyes/`.
 
 - The `emote` tool animates feelings in the eyes: happy, laugh, surprised,
@@ -13,7 +13,7 @@ build scripts. The first ambient-assistant implementation, under `eyes/`.
   frequent, unannounced use. X key cycles all emotes with the badge.
 - Taking a picture has its own look, fired by `capture_image` rather than
   chosen by the model (`neon.capture()`, channel `S.cam`): lids narrow, the
-  gaze locks dead centre and saccades stop — people stop glancing around when
+  gaze locks dead center and saccades stop — people stop glancing around when
   they're actually looking at something — and a sensor line sweeps top to
   bottom. It ends a beat wider than it started, like refocusing on the room.
   (An aperture ring contracting inside each eye was tried alongside the sweep
@@ -64,7 +64,7 @@ build scripts. The first ambient-assistant implementation, under `eyes/`.
   session open/ready/close (with cost), wake detections and their scores,
   both sides' transcripts, tool calls and their results, thinking, emotes,
   dozes. `neon.event(kind, text)` appends; kinds (session/you/neon/tool/
-  think/emote/wake/sleep/error) are colour-coded. Events accumulate whether
+  think/emote/wake/sleep/error) are color-coded. Events accumulate whether
   or not the panel is showing, so L reveals history rather than an empty
   box. Transcripts stream in fragments, so same-kind you/neon lines within
   10 s coalesce into one growing row instead of one row per fragment.

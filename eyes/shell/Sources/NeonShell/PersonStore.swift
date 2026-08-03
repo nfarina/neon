@@ -1,6 +1,6 @@
 import Foundation
 
-// The people Neon knows, and how she recognises them.
+// The people Neon knows, and how she recognizes them.
 //
 // One record per person holding both modalities, because they answer the same
 // question and fail in different conditions: voice works in the dark and
@@ -9,13 +9,13 @@ import Foundation
 // Sam and Alex may be hard to tell apart by voice and easy by face.
 //
 // Biometric data about two children. It lives in ~/.config/neon/people.json,
-// outside the repo, and the enrolment *images* are discarded once embeddings
+// outside the repo, and the enrollment *images* are discarded once embeddings
 // are computed — there is no reason to keep a face library on disk.
 struct Person: Codable {
     var name: String
-    /// 192-dim CAM++ speaker embedding, L2-normalised.
+    /// 192-dim CAM++ speaker embedding, L2-normalized.
     var voice: [Float]?
-    /// 512-dim ArcFace embeddings, one per enrolment frame kept.
+    /// 512-dim ArcFace embeddings, one per enrollment frame kept.
     var faces: [[Float]]
     var voiceUpdated: Date?
     var facesUpdated: Date?
@@ -109,6 +109,26 @@ final class PersonStore {
         let margin = ranked.count > 1 ? top.1 - ranked[1].1 : top.1
         return Match(name: top.0, score: top.1, margin: margin,
                      runnerUp: ranked.count > 1 ? ranked[1].0 : nil)
+    }
+
+    /// The hedge Neon hears. Never an assertion: this is a guess from a few
+    /// seconds of far-field audio or one camera frame, and being confidently
+    /// wrong about a name is worse than not knowing.
+    static func phrase(_ match: Match?, verb: String) -> String {
+        guard let match else { return "doesn't \(verb) like anyone you know" }
+        if match.ambiguous, let other = match.runnerUp {
+            return "\(verb)s like \(match.name) or \(other) — too close to tell"
+        }
+        return "\(verb)s like \(match.name)"
+    }
+
+    /// The same judgment with its numbers, for the event log and overlay —
+    /// "sounds like Nick" is what she gets, this is what you get when you want
+    /// to know whether to trust it.
+    static func detail(_ match: Match?) -> String {
+        guard let match else { return "no match" }
+        return String(format: "%@ %.2f, margin %.2f%@", match.name, match.score,
+                      match.margin, match.ambiguous ? " (ambiguous)" : "")
     }
 
     static func cosine(_ a: [Float], _ b: [Float]) -> Float {

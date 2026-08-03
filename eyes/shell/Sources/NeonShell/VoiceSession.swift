@@ -180,7 +180,7 @@ final class VoiceSession: NSObject {
 
 
                 Whoever just spoke \(speakerHint). Use it the way you'd use \
-                recognising a voice — greet them by name if it fits, keep it \
+                recognizing a voice — greet them by name if it fits, keep it \
                 to yourself otherwise. Never announce that you identified \
                 them, and drop it if what they say suggests otherwise.
                 """
@@ -605,9 +605,9 @@ final class VoiceSession: NSObject {
             if !PersonStore.shared.people.isEmpty,
                let image = FaceID.image(fromBase64JPEG: frame),
                let who = FaceID.shared.describe(in: image) {
-                trace("tool", "face: \(who)")
-                note += " The face in it \(who) — treat that as a guess, "
-                     + "the same way you would recognising someone across a room."
+                trace("who", "face: \(who.phrase) · \(who.detail)")
+                note += " The face in it \(who.phrase) — treat that as a guess, "
+                     + "the same way you would recognizing someone across a room."
             }
             if let resp = engine.toolResponseMessage(
                 id: id, name: captureToolName, result: note) {

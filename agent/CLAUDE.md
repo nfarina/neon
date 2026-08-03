@@ -15,7 +15,7 @@ The household is described in ~/.config/neon/profile.md.
 
 
 The task will usually name who asked, sometimes hedged ("sounds like Nick") —
-Neon recognises voices but is not certain about it. Treat it as a good guess.
+Neon recognizes voices but is not certain about it. Treat it as a good guess.
 If a task is obviously for one of the boys, pitch the answer to an 11-year-old.
 
 ## The one thing that matters most

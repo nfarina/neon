@@ -62,7 +62,7 @@ final class VoiceID {
 
     // MARK: - Embedding
 
-    /// 192-dim L2-normalised embedding for int16-range mono 16 kHz samples.
+    /// 192-dim L2-normalized embedding for int16-range mono 16 kHz samples.
     /// Needs about a second of speech to mean anything.
     func embed(_ samples: [Float]) -> [Float]? {
         guard isAvailable, let session else { return nil }
@@ -81,7 +81,7 @@ final class VoiceID {
             guard let tensor = out[outName] else { return nil }
             let raw = try tensor.tensorData() as Data
             var vec = raw.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
-            normalise(&vec)
+            normalize(&vec)
             return vec
         } catch {
             dbg("voiceid: inference failed: \(error)")
@@ -89,7 +89,7 @@ final class VoiceID {
         }
     }
 
-    private func normalise(_ v: inout [Float]) {
+    private func normalize(_ v: inout [Float]) {
         let norm = sqrt(v.reduce(0) { $0 + $1 * $1 })
         guard norm > 0 else { return }
         for i in v.indices { v[i] /= norm }
@@ -111,15 +111,10 @@ final class VoiceID {
     /// calling someone by the wrong name is worse than her not knowing.
     /// When the top two are close (the twins, most likely), it says so rather
     /// than picking.
-    func describe(_ samples: [Float]) -> String? {
+    func describe(_ samples: [Float]) -> (phrase: String, detail: String)? {
         guard !profiles.isEmpty, let vec = embed(samples) else { return nil }
-        guard let match = PersonStore.shared.matchVoice(vec, threshold: Self.threshold) else {
-            return "doesn't sound like anyone you know"
-        }
-        if match.ambiguous, let other = match.runnerUp {
-            return "sounds like \(match.name) or \(other) — too close to tell"
-        }
-        return "sounds like \(match.name)"
+        let match = PersonStore.shared.matchVoice(vec, threshold: Self.threshold)
+        return (PersonStore.phrase(match, verb: "sound"), PersonStore.detail(match))
     }
 }
 
@@ -172,7 +167,7 @@ extension VoiceID {
     }
 }
 
-// MARK: - WAV helper (enrolment and the offline harness both read files)
+// MARK: - WAV helper (enrollment and the offline harness both read files)
 
 enum WavFile {
     /// 16 kHz mono int16 WAV → int16-range floats, which is what every stage

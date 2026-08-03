@@ -30,7 +30,7 @@
     border: 1px solid rgba(102, 224, 255, 0.22);
     transition: opacity 0.25s;
   }
-  /* The kitchen timer: its own thing, bottom centre, nothing to do with
+  /* The kitchen timer: its own thing, bottom center, nothing to do with
      tasks. Quiet while counting; unmissable when it rings. */
   #timer {
     position: fixed; left: 50%; bottom: 46px; transform: translateX(-50%);
@@ -109,6 +109,7 @@
   .ev-think .evk, .ev-think .evm { color: #b3a8ff; }
   .ev-emote .evk, .ev-emote .evm { color: #ff9ec8; }
   .ev-wake  .evk, .ev-wake  .evm { color: #7dffc4; }
+  .ev-who   .evk, .ev-who   .evm { color: #c9b3ff; }
   .ev-sleep .evk, .ev-sleep .evm { color: #6a8a97; }
   .ev-error .evk, .ev-error .evm { color: #ff8f8f; }
 </style>
@@ -286,7 +287,7 @@ function clearEmote() {
 
 // Taking a picture. Not an emote — the model doesn't choose it, the camera
 // tool fires it — but the same rule applies: it has to change the eyes'
-// silhouette to read at all. Lids narrow, the gaze locks dead centre (people
+// silhouette to read at all. Lids narrow, the gaze locks dead center (people
 // stop glancing around when they're actually looking at something), an
 // aperture ring contracts and a sensor line sweeps down.
 let captureAt = -9;

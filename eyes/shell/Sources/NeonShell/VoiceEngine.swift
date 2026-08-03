@@ -60,7 +60,7 @@ let timerToolDescription = """
     plain "set a timer for five minutes".
     """
 // Memory. Deliberately two tools rather than one magic one: what she chooses
-// to write down is a judgement call, and making it explicit means the store
+// to write down is a judgment call, and making it explicit means the store
 // stays small enough to stay useful.
 let rememberToolName = "remember"
 let rememberToolDescription = """
