@@ -151,8 +151,8 @@ enum CalendarBridge {
     /// A location as you'd say it, not as the calendar stores it.
     ///
     /// Calendar entries routinely hold a venue and then a full postal address
-    /// separated by a newline — "The Tennis Club\n1 Example Street, Anytown, OR
-    /// 97225, United States". Printed whole it wrecks the one-line-per-event
+    /// separated by a newline — "The Tennis Club\n1 Example Street, Anytown,
+    /// OR 97000, United States". Printed whole it wrecks the one-line-per-event
     /// shape, and read aloud it is a street address nobody asked for. The first
     /// line is the venue, which is the entire useful part.
     private static func shortLocation(_ raw: String) -> String? {
