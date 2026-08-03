@@ -145,7 +145,11 @@ build scripts. The first ambient-assistant implementation, under `eyes/`.
   approval dialog. Its window is deliberately on screen (faint, floating):
   macOS throttles requestAnimationFrame in occluded windows, which stalls the
   animation and snapshots the wrong frame.
-- `eyes/rebuild.sh` — build + restart in one command; the everyday loop.
+- `eyes/rebuild.sh` — build; `--run` also restarts. It deliberately does *not*
+  relaunch by default: Neon activates itself and takes the whole screen on
+  launch, which steals focus from whatever Nick is doing while an agent is
+  working. It says so when a running instance is stale rather than fixing it
+  uninvited.
   Both the Swift and `web/index.html` are copied into the bundle, so an
   edit to *either* needs a rebuild, not just a relaunch.
 - `eyes/shell/build.sh` — builds and assembles `eyes/Neon.app` by hand

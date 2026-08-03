@@ -77,6 +77,12 @@ final class TaskRunner {
         var args = ["-p", prompt,
                     "--output-format", "stream-json", "--verbose",
                     "--add-dir", Self.home.path,
+                    // cwd is tasks/<id>/, and settings discovery does not walk
+                    // up the way CLAUDE.md discovery does — so the agent home's
+                    // permission rules have to be named outright. Without this
+                    // every connector call (calendar, mail, drive) comes back
+                    // "you haven't granted it yet" and the task quietly fails.
+                    "--settings", Self.home.appendingPathComponent(".claude/settings.json").path,
                     "--allowedTools"] + Self.tools
                  + ["--permission-mode", "acceptEdits", "--max-turns", "40"]
         if let model = Self.model { args += ["--model", model] }
