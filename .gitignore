@@ -1,5 +1,9 @@
 .DS_Store
-tools/allow-chrome-mcp/.build/
-tools/allow-chrome-mcp/allow-chrome-mcp
 eyes/shell/.build/
 eyes/Neon.app/
+
+# Release artifacts: the notarized zip, and Sparkle's command-line tools which
+# tools/sparkle-tools.sh downloads on demand. docs/appcast.xml is deliberately
+# not here — it is the update feed, and it is meant to be committed.
+dist/
+build/
