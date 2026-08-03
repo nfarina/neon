@@ -50,6 +50,13 @@ final class AudioHub {
             dbg("hub: engine failed to start: \(error.localizedDescription)")
         }
         dbg("hub: running=\(engine.isRunning) vp=\(voiceProcessing) format=\(format)")
+        // A configuration change silently stops the tap; rebuild on it.
+        NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+        ) { [weak self] _ in
+            dbg("hub: configuration changed — rebuilding")
+            self?.restart()
+        }
     }
 
     /// Attach the playback node lazily, after the engine is running: doing
@@ -63,6 +70,20 @@ final class AudioHub {
                        format: AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!)
         player.play()
         dbg("hub: player attached (engine running=\(engine.isRunning))")
+    }
+
+    /// Tear the engine down and build it again. AVAudioEngine stops
+    /// delivering tap buffers on a configuration change (device added or
+    /// removed, sample rate changed) without reporting an error to anyone,
+    /// and the only cure is a rebuild.
+    func restart() {
+        guard started else { return }
+        dbg("hub: restarting")
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        started = false
+        playerAttached = false
+        startIfNeeded()
     }
 
     func addConsumer(_ sink: @escaping (AVAudioPCMBuffer) -> Void) -> UUID {

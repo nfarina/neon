@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clickMonitor: Any?
     private var debugVisible = false
     private var statsTimer: Timer?
+    private var micTimer: Timer?
     private let display = DisplayKeeper()
     private var wakeHeard = ""  // latest wake-listener transcript, for the overlay
     private var providerName = ProcessInfo.processInfo.environment["NEON_PROVIDER"]
@@ -72,6 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LocationProvider.shared.start()
         idleTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             self?.checkIdle()
+        }
+        // Deafness needs catching sooner than the 20 s idle sweep.
+        micTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.checkMicrophone()
         }
         installExitHandlers()
 
@@ -258,7 +263,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         webView.evaluateJavaScript("window.neon && neon.deepSleep(false)")
     }
 
+    /// The wake listener going deaf is the worst failure this thing has,
+    /// because it is invisible: she simply never answers again. Nothing
+    /// reports it, so it has to be inferred from silence at the microphone.
+    private func checkMicrophone() {
+        guard let oww = owwListener, oww.modelName != nil else { return }
+        let quiet = oww.secondsSinceAudio
+        guard quiet > 6 else { return }
+        logEvent("error", String(format: "microphone silent for %.0fs — reattaching", quiet))
+        NSLog("Neon: wake listener deaf for \(Int(quiet))s; reattaching tap")
+        oww.reattach()
+    }
+
     private func checkIdle() {
+        checkMicrophone()
         TaskStore.shared.prune()
         // Something is cooking — literally. Deep sleep takes the backlight
         // down to an ember, which is the wrong state for a display that is
@@ -559,6 +577,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ["engine", "\(providerName) (idle)"],
                 ["state", "wake listener"],
                 ["wake", wakeStatus()],
+                ["mic", owwListener.map {
+                    String(format: "%.1fs since audio", $0.secondsSinceAudio) } ?? "—"],
                 ["here", LocationProvider.shared.status()],
                 ["lifetime", String(format: "$%.3f", UsageStore.shared.total)],
                 ["mac hears", String(wakeHeard.suffix(70))],
@@ -573,7 +593,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startVoiceSession(command: String? = nil, prelude: Data? = nil,
                                    preludeFrom: Date? = nil) {
-        guard voiceSession == nil else { return }
+        guard voiceSession == nil else {
+            // This used to return in silence, which is indistinguishable from
+            // the wake never arriving.
+            logEvent("error", "wake ignored — a session is already open")
+            return
+        }
         NSLog("Neon: starting voice session")
         // ~28 ms, against a socket connect of roughly a second — cheap enough
         // to resolve before the session opens rather than a turn late.

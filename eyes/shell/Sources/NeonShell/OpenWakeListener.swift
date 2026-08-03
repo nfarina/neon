@@ -97,6 +97,11 @@ final class OpenWakeListener {
     var onNearMiss: (Float) -> Void = { _ in }
     private static let nearMissFloor: Float = 0.05
     private var lastNearMiss = Date.distantPast
+    /// When the microphone last delivered a buffer. A wake listener that has
+    /// stopped receiving audio looks exactly like one that hears nothing —
+    /// silent, and indistinguishable from a quiet room.
+    private(set) var lastChunkAt = Date.distantPast
+    var secondsSinceAudio: TimeInterval { Date().timeIntervalSince(lastChunkAt) }
 
     // MARK: - Setup
 
@@ -173,6 +178,18 @@ final class OpenWakeListener {
         }
     }
 
+    /// Drop the tap and take a fresh one. The engine can stop delivering
+    /// buffers without erroring — a device change is the usual cause — and
+    /// nothing about that state is visible from inside the callback that
+    /// stopped being called.
+    func reattach() {
+        AudioHub.shared.removeConsumer(consumerId)
+        consumerId = nil
+        AudioHub.shared.restart()
+        lastChunkAt = Date()   // give the new tap a grace period
+        attachWhenHubReady()
+    }
+
     private func attachWhenHubReady() {
         guard consumerId == nil else { return }
         guard let tapFormat = AudioHub.shared.tapFormat else {
@@ -191,6 +208,7 @@ final class OpenWakeListener {
     }
 
     private func capture(_ buffer: AVAudioPCMBuffer) {
+        lastChunkAt = Date()
         guard let converter else { return }
         let ratio = 16000.0 / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
