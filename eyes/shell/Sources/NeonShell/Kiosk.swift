@@ -41,6 +41,15 @@ enum Kiosk {
         return mods == [.control, .option, .command]
     }
 
+    /// Cmd-, — settings, because that is where a Mac user's hand goes. The
+    /// bare comma works too (main.swift's key monitor); a kiosk with no menu
+    /// bar has plenty of spare single keys, and reaching for a modifier at a
+    /// kitchen counter is a nuisance.
+    static func isSettingsChord(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown, event.keyCode == 43 else { return false }  // ,
+        return event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command]
+    }
+
     /// Ctrl-Opt-Cmd-H — step aside without quitting. macOS permission prompts
     /// (location, mic, screen recording) and Chrome's debugging consent all
     /// appear *behind* a fullscreen kiosk window that has disabled process

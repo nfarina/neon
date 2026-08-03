@@ -8,6 +8,30 @@ edge of `web/index.html` renders the list. The kitchen timer is separate —
 Built 2026-08-02. `TaskRunner.swift` runs the work; `TaskStore.swift` tracks
 it; `main.swift` announces completions.
 
+## Shelved, 2026-08-03
+
+**Background tasks are off by default and no longer part of Neon's tool set
+unless somebody switches them on** (Settings → Plugins → Background tasks).
+Everything below still describes how they work, because they still work.
+
+The reason is one real test rather than a toy one. Asked to look at today's
+calendar, Neon started a task and said so — and then there was a minute of
+nothing. She was asleep, the room was silent, whoever asked was stood there
+waiting, and a full minute later she woke up and answered a question everyone
+had stopped caring about.
+
+That is not latency to tune. A subprocess that boots a coding agent is not a
+conversational turn, and no amount of making it faster turns it into one.
+Anything somebody is standing there waiting for has to be answered by a tool
+that returns in the same breath — which is what `CalendarPlugin` is, at ~4 ms
+against ~60 s for the identical question.
+
+So: kept, because "look into flights for October and tell me later" is still
+exactly the right shape for this, and because a plugin that ships off is the
+honest test of whether "off" really means the model can't see it (see
+`docs/plugins.md`). Wrong for anything else. The prompt fragment now says so in
+as many words.
+
 ## The runner
 
 `claude -p --output-format stream-json --verbose`, spawned directly. Not the
@@ -42,6 +66,11 @@ installed per-user, not in `/usr/bin`.
 tasks, with `agent/CLAUDE.md` from this repo seeded into it on first run. After
 that **the agent owns the file**; it is told to keep it current, and
 overwriting would delete what it learned.
+
+The seed in the repo describes the job, not the family: who actually lives here
+is spliced in from `~/.config/neon/profile.md` at seeding time, the same file
+the voice session reads. Household facts are not source code, and this repo is
+public.
 
 Each task runs with `tasks/<id>/` as its working directory, which is also what
 makes the home `CLAUDE.md` apply: Claude Code walks up from cwd. Scratch files
@@ -174,7 +203,8 @@ reaches `state=sleeping` with a task on screen.)
 ## Tool surface
 
 `start_task(title, instructions)` · `list_tasks()` · `check_task(id)` ·
-`cancel_task(id)`.
+`cancel_task(id)` — declared by `TasksPlugin`, and absent from the session
+entirely while the plugin is off.
 
 Cap is **5 active** (`TaskStore.maxActive`) — five things running in a kitchen
 is already more than anyone can hold in their head. Over the cap, `add` returns

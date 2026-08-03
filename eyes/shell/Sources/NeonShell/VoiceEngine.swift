@@ -25,92 +25,71 @@ enum VoiceEvent {
     case thinking                             // a thought part arrived; model is reasoning
 }
 
-// Tools offered to the engines. go_to_sleep lets the model end the session
-// itself (the shell closes the socket; no response sent). capture_image
-// fetches one camera frame on demand — far cheaper than streaming.
+// Core tools — Neon herself, not features. Ending the conversation, looking
+// through the camera, showing a feeling, and remembering are the things that
+// make her her; none of them is switchable, and none belongs to a plugin.
+// Everything else the model can call comes from PluginRegistry (Plugins.swift).
+//
+// go_to_sleep lets the model end the session itself (the shell closes the
+// socket; no response sent). capture_image fetches one camera frame on demand
+// — far cheaper than streaming.
 let sleepToolName = "go_to_sleep"
-let sleepToolDescription = """
-    End the conversation and go back to sleep. Call this when the user says \
-    goodbye, the conversation is clearly over, or you realize you were woken \
-    by accident and the speech around you is not directed at you.
-    """
 let captureToolName = "capture_image"
-let captureToolDescription = """
-    Capture a fresh snapshot from your camera so you can see the kitchen \
-    right now. Call this whenever looking would help — what someone is \
-    holding, what's cooking, who's there.
-    """
 let emoteToolName = "emote"
+let rememberToolName = "remember"
+let recallToolName = "recall"
+
 let emoteEmotions = ["happy", "laugh", "surprised", "wink", "sad",
                      "confused", "eyeroll", "excited", "love"]
-let emoteToolDescription = """
-    Show a feeling with your eyes — they animate the emotion on screen. \
-    Use this often, whenever it fits what you're saying or reacting to.
-    """
-// The kitchen timer: one at a time, and it rings on its own rather than
-// through Neon. She sets it, reports on it, and can silence it — but she is
-// not in the loop when it goes off.
-let timerToolName = "set_timer"
-let timerToolDescription = """
-    Set the kitchen timer. There is only one, so this replaces any timer \
-    already running. It rings by itself on screen when it's up — you are not \
-    involved and shouldn't promise to tell them; just confirm it briefly \
-    ("five minutes, going"). Only pass a label if they actually said what \
-    it's for ("pasta", "tea") — never invent one, and leave it out for a \
-    plain "set a timer for five minutes".
-    """
-// Memory. Deliberately two tools rather than one magic one: what she chooses
-// to write down is a judgment call, and making it explicit means the store
-// stays small enough to stay useful.
-let rememberToolName = "remember"
-let rememberToolDescription = """
-    Save something worth knowing later — a preference, a plan, a fact about \
-    someone, how they like something done. Write it as a short standalone \
-    sentence that will still make sense in a month ("Alex's tennis lesson \
-    moved to Thursdays", not "it moved"). Don't save passing chatter, \
-    anything you were told to forget, or things you can look up. You don't \
-    need permission and shouldn't announce it — just remember and carry on.
-    """
-let recallToolName = "recall"
-let recallToolDescription = """
-    Look through what you remember. Use it when someone refers to something \
-    from before, asks what you know about a person or plan, or when an \
-    answer would be better if you checked first. Query with the words you'd \
-    expect the memory to contain.
-    """
-let startTaskToolName = "start_task"
-let startTaskToolDescription = """
-    Hand work to Claude Code, which runs in the background while you carry on \
-    talking: research, comparisons, anything that takes longer than a \
-    sentence or needs the web. You'll be told when it finishes and can say so \
-    then. Give the full request in `instructions` — Claude can't ask you \
-    anything once it starts, so include everything it needs, including who \
-    it's for and any preference you know about. Don't use it for things you \
-    can just answer.
-    """
-let listTasksToolName = "list_tasks"
-let listTasksToolDescription = """
-    What background tasks are running, what each one is doing right now, and \
-    what any finished ones came back with.
-    """
-let checkTaskToolName = "check_task"
-let checkTaskToolDescription = """
-    Detail on one task by id — its current activity, or its result if it's done.
-    """
-let cancelTaskToolName = "cancel_task"
-let cancelTaskToolDescription = """
-    Stop a running background task by id.
-    """
-let timerCheckToolName = "check_timer"
-let timerCheckToolDescription = """
-    How much time is left on the kitchen timer, or whether it's ringing now.
-    """
-let timerStopToolName = "stop_timer"
-let timerStopToolDescription = """
-    Stop the kitchen timer — silences it if it's ringing, cancels it if it's \
-    still counting down. Call this whenever someone says to stop, cancel, or \
-    turn it off while it's going, even if they don't use the word "timer".
-    """
+
+let coreTools: [ToolSpec] = [
+    ToolSpec(
+        name: sleepToolName,
+        description: """
+            End the conversation and go back to sleep. Call this when the user says \
+            goodbye, the conversation is clearly over, or you realize you were woken \
+            by accident and the speech around you is not directed at you.
+            """),
+    ToolSpec(
+        name: captureToolName,
+        description: """
+            Capture a fresh snapshot from your camera so you can see the kitchen \
+            right now. Call this whenever looking would help — what someone is \
+            holding, what's cooking, who's there.
+            """),
+    ToolSpec(
+        name: emoteToolName,
+        description: """
+            Show a feeling with your eyes — they animate the emotion on screen. \
+            Use this often, whenever it fits what you're saying or reacting to.
+            """,
+        params: [ToolParam("emotion", .string, options: emoteEmotions)]),
+    // Memory. Deliberately two tools rather than one magic one: what she
+    // chooses to write down is a judgment call, and making it explicit means
+    // the store stays small enough to stay useful.
+    ToolSpec(
+        name: rememberToolName,
+        description: """
+            Save something worth knowing later — a preference, a plan, a fact about \
+            someone, how they like something done. Write it as a short standalone \
+            sentence that will still make sense in a month ("Alex's tennis lesson \
+            moved to Thursdays", not "it moved"). Don't save passing chatter, \
+            anything you were told to forget, or things you can look up. You don't \
+            need permission and shouldn't announce it — just remember and carry on.
+            """,
+        params: [ToolParam("fact", .string,
+                           "One standalone sentence, understandable with no other context")]),
+    ToolSpec(
+        name: recallToolName,
+        description: """
+            Look through what you remember. Use it when someone refers to something \
+            from before, asks what you know about a person or plan, or when an \
+            answer would be better if you checked first. Query with the words you'd \
+            expect the memory to contain.
+            """,
+        params: [ToolParam("query", .string,
+                           "Words you'd expect in the memory — a name, a topic")]),
+]
 
 protocol VoiceEngine {
     var name: String { get }
@@ -119,8 +98,10 @@ protocol VoiceEngine {
     var keyName: String { get }
     func url(key: String) -> URL
     func headers(key: String) -> [String: String]
-    /// Sent immediately after the socket opens.
-    func openMessages(system: String) -> [[String: Any]]
+    /// Sent immediately after the socket opens. `tools` is the whole surface
+    /// for this session — core plus whatever plugins are switched on — so a
+    /// disabled feature isn't merely refused, it is never mentioned.
+    func openMessages(system: String, tools: [ToolSpec]) -> [[String: Any]]
     /// Sent when the engine reports `.ready`.
     func readyMessages(greeting: String) -> [[String: Any]]
     func audioMessage(_ base64: String) -> [String: Any]
@@ -167,7 +148,7 @@ struct GeminiEngine: VoiceEngine {
     }
     func headers(key: String) -> [String: String] { [:] }
 
-    func openMessages(system: String) -> [[String: Any]] {
+    func openMessages(system: String, tools: [ToolSpec]) -> [[String: Any]] {
         var generationConfig: [String: Any] = [
             "responseModalities": ["AUDIO"],
             "speechConfig": ["voiceConfig": ["prebuiltVoiceConfig": ["voiceName": voice]]],
@@ -187,71 +168,7 @@ struct GeminiEngine: VoiceEngine {
                 "inputAudioTranscription": [String: String](),
                 "tools": [
                     ["googleSearch": [String: String]()],
-                    ["functionDeclarations": [
-                        ["name": sleepToolName, "description": sleepToolDescription],
-                        ["name": captureToolName, "description": captureToolDescription],
-                        ["name": emoteToolName, "description": emoteToolDescription,
-                         "parameters": [
-                            "type": "OBJECT",
-                            "properties": ["emotion": ["type": "STRING", "enum": emoteEmotions]],
-                            "required": ["emotion"],
-                         ]],
-                        ["name": timerToolName, "description": timerToolDescription,
-                         "parameters": [
-                            "type": "OBJECT",
-                            "properties": [
-                                "label": ["type": "STRING",
-                                          "description": "Optional. Only what they said it's for — \"pasta\", \"tea\". Omit if they didn't say."],
-                                "seconds": ["type": "NUMBER",
-                                            "description": "How long from now, in seconds"],
-                            ],
-                            "required": ["seconds"],
-                         ]],
-                        ["name": rememberToolName, "description": rememberToolDescription,
-                         "parameters": [
-                            "type": "OBJECT",
-                            "properties": [
-                                "fact": ["type": "STRING",
-                                         "description": "One standalone sentence, understandable with no other context"],
-                            ],
-                            "required": ["fact"],
-                         ]],
-                        ["name": recallToolName, "description": recallToolDescription,
-                         "parameters": [
-                            "type": "OBJECT",
-                            "properties": [
-                                "query": ["type": "STRING",
-                                          "description": "Words you'd expect in the memory — a name, a topic"],
-                            ],
-                            "required": ["query"],
-                         ]],
-                        ["name": startTaskToolName, "description": startTaskToolDescription,
-                         "parameters": [
-                            "type": "OBJECT",
-                            "properties": [
-                                "title": ["type": "STRING",
-                                          "description": "2-4 words for the screen — \"recipe ideas\", \"racket prices\""],
-                                "instructions": ["type": "STRING",
-                                                 "description": "The complete request, self-contained"],
-                            ],
-                            "required": ["title", "instructions"],
-                         ]],
-                        ["name": listTasksToolName, "description": listTasksToolDescription],
-                        ["name": checkTaskToolName, "description": checkTaskToolDescription,
-                         "parameters": [
-                            "type": "OBJECT",
-                            "properties": ["id": ["type": "STRING"]],
-                            "required": ["id"],
-                         ]],
-                        ["name": cancelTaskToolName, "description": cancelTaskToolDescription,
-                         "parameters": [
-                            "type": "OBJECT",
-                            "properties": ["id": ["type": "STRING"]],
-                            "required": ["id"],
-                         ]],
-                        ["name": timerCheckToolName, "description": timerCheckToolDescription],
-                        ["name": timerStopToolName, "description": timerStopToolDescription],
-                    ]],
+                    ["functionDeclarations": tools.map(\.geminiDeclaration)],
                 ],
             ],
         ]]
@@ -361,17 +278,13 @@ struct OpenAIEngine: VoiceEngine {
         ["Authorization": "Bearer \(key)"]
     }
 
-    func openMessages(system: String) -> [[String: Any]] {
+    func openMessages(system: String, tools: [ToolSpec]) -> [[String: Any]] {
         [[
             "type": "session.update",
             "session": [
                 "type": "realtime",
                 "instructions": system,
-                "tools": [[
-                    "type": "function",
-                    "name": sleepToolName,
-                    "description": sleepToolDescription,
-                ]],
+                "tools": tools.map(\.openAIDeclaration),
                 "audio": [
                     "input": [
                         "format": ["type": "audio/pcm", "rate": 24000],

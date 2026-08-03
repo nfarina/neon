@@ -115,6 +115,126 @@
   .ev-timer .evk, .ev-timer .evm { color: #ffb85c; }
   .ev-sleep .evk, .ev-sleep .evm { color: #6a8a97; }
   .ev-error .evk, .ev-error .evm { color: #ff8f8f; }
+
+  /* ---------------------------------------------------------- settings
+     A panel over the eyes rather than a Mac window, because Neon is not a
+     Mac app to the person standing at the counter — she is a face on a
+     screen, and the place you change what she can do should look like it
+     belongs to her. Same type, same cyan, same black.
+
+     She is asleep behind it (the shell closes the session on open), so the
+     scrim is heavy enough to make the panel the only thing in the room. */
+  #settings {
+    position: fixed; inset: 0; display: none; z-index: 10;
+    overflow-y: auto; overscroll-behavior: contain; cursor: default;
+    padding: 6vh 4vw; background: rgba(2, 6, 10, 0.93);
+    font: 14px/1.55 ui-monospace, SFMono-Regular, monospace;
+    color: #9fd6e6;
+  }
+  #settings.on { display: block; }
+  #settings ::selection { background: rgba(102, 224, 255, 0.28); }
+  .sheet { max-width: 780px; margin: 0 auto; }
+  .shead {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding-bottom: 14px; margin-bottom: 26px;
+    border-bottom: 1px solid rgba(102, 224, 255, 0.16);
+  }
+  .shead h1 {
+    margin: 0; font-size: 26px; font-weight: 500; letter-spacing: 0.04em;
+    color: #cfeeff; text-shadow: 0 0 22px rgba(102, 224, 255, 0.35);
+  }
+  .sgroup { margin-bottom: 34px; }
+  .sgroup > h2 {
+    margin: 0 0 12px; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.18em; text-transform: uppercase; color: #4e7d8c;
+  }
+  .srow {
+    display: flex; gap: 16px; align-items: flex-start;
+    padding: 13px 0; border-top: 1px solid rgba(102, 224, 255, 0.09);
+  }
+  .srow:first-of-type { border-top: none; }
+  .srow .grow { flex: 1; min-width: 0; }
+  .srow .name { color: #cfeeff; }
+  .srow .sub { color: #6b93a2; font-size: 12px; margin-top: 3px; }
+  .srow .warn { color: #ffb85c; font-size: 12px; margin-top: 5px; }
+  .srow .ok { color: #7dffc4; }
+
+  /* Controls. Deliberately not native: a system checkbox next to this
+     typeface looks like a bug report. */
+  .btn {
+    flex: none; padding: 6px 15px; border-radius: 999px; cursor: pointer;
+    font: inherit; font-size: 13px; color: #9fd6e6; background: transparent;
+    border: 1px solid rgba(102, 224, 255, 0.28);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .btn:hover { background: rgba(102, 224, 255, 0.12); color: #eaf6ff; }
+  .btn.primary { color: #04121a; background: #66e0ff; border-color: #66e0ff; }
+  .btn.primary:hover { background: #8ce9ff; }
+  .btn.quiet { color: #587585; border-color: rgba(102, 224, 255, 0.14); }
+  .btn.quiet:hover { color: #ff8f8f; border-color: rgba(255, 143, 143, 0.4);
+                     background: rgba(255, 143, 143, 0.08); }
+  .btn[disabled] { opacity: 0.35; cursor: default; pointer-events: none; }
+
+  .toggle {
+    flex: none; width: 46px; height: 26px; border-radius: 999px; cursor: pointer;
+    background: rgba(102, 224, 255, 0.1); position: relative;
+    border: 1px solid rgba(102, 224, 255, 0.22); transition: background 0.18s;
+  }
+  .toggle::after {
+    content: ""; position: absolute; top: 3px; left: 3px;
+    width: 18px; height: 18px; border-radius: 50%; background: #4e7d8c;
+    transition: transform 0.18s, background 0.18s;
+  }
+  .toggle.on { background: rgba(102, 224, 255, 0.26); border-color: #66e0ff; }
+  .toggle.on::after {
+    transform: translateX(20px); background: #66e0ff;
+    box-shadow: 0 0 12px 2px rgba(102, 224, 255, 0.7);
+  }
+
+  #settings textarea {
+    width: 100%; min-height: 190px; resize: vertical; padding: 12px 14px;
+    font: inherit; font-size: 13px; line-height: 1.6;
+    color: #cfeeff; background: rgba(102, 224, 255, 0.05);
+    border: 1px solid rgba(102, 224, 255, 0.16); border-radius: 8px;
+  }
+  #settings textarea:focus, #settings input:focus {
+    outline: none; border-color: rgba(102, 224, 255, 0.5);
+    background: rgba(102, 224, 255, 0.08);
+  }
+  #settings input[type=text] {
+    flex: 1; min-width: 0; padding: 6px 12px; border-radius: 999px;
+    font: inherit; font-size: 13px; color: #cfeeff;
+    background: rgba(102, 224, 255, 0.05);
+    border: 1px solid rgba(102, 224, 255, 0.16);
+  }
+  #settings input::placeholder { color: #46687a; }
+  .saved { color: #7dffc4; font-size: 12px; opacity: 0; transition: opacity 0.3s; }
+  .saved.on { opacity: 1; }
+  .note { color: #587585; font-size: 12px; margin-top: 10px; }
+
+  /* The enrollment sitting takes the whole panel: it is eight seconds of
+     looking at a camera and twelve of talking, and anything else on screen
+     is something to read instead of doing it. */
+  .sitting { text-align: center; padding: 2vh 0 4vh; }
+  .sitting .phase { color: #cfeeff; font-size: 17px; margin-bottom: 6px; }
+  .sitting .msg { color: #9fd6e6; max-width: 460px; margin: 0 auto 20px; }
+  .sitting .count {
+    font-size: 62px; color: #66e0ff; font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 30px rgba(102, 224, 255, 0.5); line-height: 1.1;
+  }
+  .sitting .sub { color: #4e7d8c; font-size: 12px; margin-bottom: 22px; }
+  /* Mirrored, because a preview that moves the wrong way when you turn your
+     head is the reason people can't line themselves up. */
+  .sitting img {
+    width: 320px; max-width: 70vw; border-radius: 12px; transform: scaleX(-1);
+    border: 1px solid rgba(102, 224, 255, 0.25); background: #02060a;
+  }
+  .sitting pre {
+    display: inline-block; text-align: left; margin: 18px 0 22px;
+    padding: 14px 18px; border-radius: 8px; font-size: 12px; line-height: 1.6;
+    color: #9fd6e6; background: rgba(102, 224, 255, 0.05);
+    border: 1px solid rgba(102, 224, 255, 0.14); white-space: pre-wrap;
+  }
 </style>
 </head>
 <body>
@@ -130,6 +250,7 @@
   <div><b>P</b> preview states</div>
   <div><b>X</b> cycle emotes</div>
   <div><b>P</b> includes capture</div>
+  <div><b>,</b> settings</div>
   <div><b>Tab</b> hold for this legend</div>
   <div><b>⌃⌥⌘H</b> step aside (system dialogs)</div>
   <!-- The quit chord is deliberately not listed: anyone who can read this
@@ -140,6 +261,7 @@
 <div id="tasks"></div>
 <div id="timer"></div>
 <div id="events"></div>
+<div id="settings"></div>
 <script>
 "use strict";
 
@@ -777,6 +899,261 @@ function frame(ms) {
 }
 requestAnimationFrame(frame);
 
+// ============================================================ settings
+// The panel over the eyes. The shell pushes one whole state object and this
+// re-renders all of it — the surface is small, and a diffing scheme is how you
+// end up with a toggle that disagrees with the file on disk.
+
+const sEl = document.getElementById("settings");
+let sState = null;      // last state pushed by the shell
+let sSitting = null;    // live enrollment, when one is running
+let sDraft = null;      // unsaved household profile text
+let sSavedAt = 0;
+
+// The shell's half of the bridge. Absent when the page is opened directly in
+// a browser for styling work, which is a supported way to work on it.
+function sSend(action, extra) {
+  const msg = Object.assign({ action: action }, extra || {});
+  if (window.webkit && webkit.messageHandlers && webkit.messageHandlers.neon) {
+    webkit.messageHandlers.neon.postMessage(msg);
+  } else {
+    console.log("settings (no shell):", msg);
+  }
+}
+
+const esc = s => String(s == null ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+function renderSettings() {
+  if (!sEl.classList.contains("on")) return;
+  if (sSitting && sSitting.running) {
+    // Write the frame once, then patch it — see paintSitting.
+    if (!document.getElementById("scount")) sEl.innerHTML = sittingHTML();
+    paintSitting();
+    return;
+  }
+  // `phase` is only absent if a preview frame somehow arrived before the
+  // first progress tick; treat that as still running rather than as a result.
+  if (sSitting && sSitting.phase) { sEl.innerHTML = sittingResultHTML(); return; }
+  if (!sState) { sEl.innerHTML = `<div class="sheet"><div class="shead"><h1>Settings</h1></div></div>`; return; }
+  sEl.innerHTML = `<div class="sheet">
+    <div class="shead">
+      <h1>Settings</h1>
+      <button class="btn primary" data-act="close">done</button>
+    </div>
+    ${pluginsHTML()}
+    ${householdHTML()}
+    ${peopleHTML()}
+    ${aboutHTML()}
+  </div>`;
+}
+
+function pluginsHTML() {
+  const rows = (sState.plugins || []).map(p => {
+    const perm = p.permission;
+    let aside = "";
+    let extra = "";
+    if (perm) {
+      if (perm.status === "notDetermined") {
+        aside = `<button class="btn" data-permission="${esc(p.id)}">allow…</button>`;
+        // Only nag about the missing grant once they've actually asked for
+        // the feature. Off and unasked is a perfectly coherent state.
+        if (p.on) extra = `<div class="warn">Needs permission before she can use it.</div>`;
+      } else if (perm.status === "denied") {
+        extra = `<div class="warn">${esc(perm.hint)}</div>`;
+      } else if (p.on) {
+        extra = `<div class="sub ok">Access granted.</div>`;
+      }
+    }
+    // Which calendars she can actually see — the first thing anyone wants
+    // confirmed after clicking Allow.
+    if (p.id === "calendar" && p.on && sState.calendars) {
+      extra += sState.calendars.length
+        ? `<div class="sub">Reading: ${sState.calendars.map(c => esc(c.title)).join(" · ")}</div>`
+        : `<div class="sub">No calendars found on this Mac.</div>`;
+    }
+    return `<div class="srow">
+      <div class="grow">
+        <div class="name">${esc(p.title)}</div>
+        <div class="sub">${esc(p.blurb)}</div>
+        ${extra}
+      </div>
+      ${aside}
+      <div class="toggle ${p.on ? "on" : ""}" data-plugin="${esc(p.id)}"></div>
+    </div>`;
+  }).join("");
+  return `<div class="sgroup"><h2>Plugins</h2>${rows}</div>`;
+}
+
+function householdHTML() {
+  const text = sDraft === null ? (sState.profile || "") : sDraft;
+  const justSaved = Date.now() - sSavedAt < 2500;
+  return `<div class="sgroup">
+    <h2>Household</h2>
+    <div class="sub" style="margin-bottom:10px">
+      Who Neon lives with, in your own words. She reads this at the start of
+      every conversation. Kept in ~/.config/neon/profile.md, outside the repo.
+    </div>
+    <textarea id="sprofile" spellcheck="false"
+      placeholder="Nick — dad, works in software.&#10;Sam and Alex — twins, 9.&#10;We eat around 6.30.">${esc(text)}</textarea>
+    <div class="srow" style="border:none;padding-top:10px">
+      <div class="grow"><span class="saved ${justSaved ? "on" : ""}">saved</span></div>
+      <button class="btn" data-act="saveProfile">save</button>
+    </div>
+  </div>`;
+}
+
+function peopleHTML() {
+  const noModels = !sState.faceModel && !sState.voiceModel;
+  const rows = (sState.people || []).map(p => {
+    const bits = [];
+    if (p.voice) bits.push("voice");
+    if (p.faces) bits.push(`${p.faces} face${p.faces === 1 ? "" : "s"}`);
+    if (p.updated) bits.push(p.updated);
+    return `<div class="srow">
+      <div class="grow">
+        <div class="name">${esc(p.name)}</div>
+        <div class="sub">${bits.length ? esc(bits.join(" · ")) : "nothing enrolled"}</div>
+      </div>
+      <button class="btn" data-enroll="${esc(p.name)}">re-enroll</button>
+      <button class="btn quiet" data-forget="${esc(p.name)}">forget</button>
+    </div>`;
+  }).join("");
+  const add = noModels ? "" : `<div class="srow">
+      <input type="text" id="snewperson" placeholder="name" spellcheck="false">
+      <button class="btn" data-act="enrollNew">enroll</button>
+    </div>`;
+  const why = noModels
+    ? `<div class="note">No recognition models installed, so there is nobody to
+       enroll yet — see docs/people.md for the two downloads.</div>`
+    : `<div class="note">A sitting is eight seconds looking at the camera and
+       twelve talking. Stand where you normally stand: a voiceprint made at
+       arm's length won't match someone across the kitchen. Photos are never
+       saved — only the numbers derived from them.</div>`;
+  return `<div class="sgroup"><h2>People she knows</h2>${rows}${add}${why}</div>`;
+}
+
+function aboutHTML() {
+  const canUpdate = sState.updatesSupported;
+  return `<div class="sgroup">
+    <h2>About</h2>
+    <div class="srow">
+      <div class="grow">
+        <div class="name">Neon ${esc(sState.version)}</div>
+        <div class="sub">build ${esc(sState.build)}${canUpdate ? "" : " · updates not configured in this build"}</div>
+      </div>
+      <button class="btn" data-act="checkUpdates" ${canUpdate ? "" : "disabled"}>check for updates</button>
+    </div>
+    <div class="srow">
+      <div class="grow">
+        <div class="name">Quit Neon</div>
+        <div class="sub">She stops listening until something starts her again.</div>
+      </div>
+      <button class="btn quiet" data-act="quit">quit</button>
+    </div>
+  </div>`;
+}
+
+const SITTING_HEADINGS = { faces: "Faces", gettingReady: "Ready?", voice: "Voice" };
+
+function sittingHTML() {
+  return `<div class="sheet"><div class="sitting">
+    <div class="phase" id="sphase"></div>
+    <div class="msg" id="smsg"></div>
+    <div class="count" id="scount"></div>
+    <div class="sub" id="ssub"></div>
+    <div id="spreview"></div>
+    <div style="margin-top:24px"><button class="btn quiet" data-act="enrollCancel">cancel</button></div>
+  </div></div>`;
+}
+
+/// Camera frames arrive at 4 fps. Rebuilding the sheet for each one replaces
+/// the <img> element every 250 ms, which makes the preview flash white while
+/// the new data URI decodes — so the sitting screen is written once and its
+/// fields are patched in place.
+function paintSitting() {
+  const s = sSitting;
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  set("sphase", SITTING_HEADINGS[s.phase] || "");
+  set("smsg", s.message || "");
+  set("scount", s.remaining == null ? "" : String(s.remaining));
+  set("ssub", s.phase === "faces" ? `${s.captured || 0} frames`
+    : s.phase === "voice" ? "listening" : "");
+  const holder = document.getElementById("spreview");
+  if (!holder || !s.preview) return;
+  let img = holder.firstElementChild;
+  if (!img) { img = document.createElement("img"); img.alt = ""; holder.appendChild(img); }
+  img.src = "data:image/jpeg;base64," + s.preview;
+}
+
+function sittingResultHTML() {
+  const s = sSitting;
+  return `<div class="sheet"><div class="sitting">
+    <div class="phase">${esc(s.message || "")}</div>
+    ${s.report ? `<pre>${esc(s.report)}</pre>` : ""}
+    <div><button class="btn primary" data-act="sittingDone">done</button></div>
+  </div></div>`;
+}
+
+// One delegated listener: the sheet is rebuilt wholesale on every change, so
+// per-element handlers would have to be re-attached every time.
+sEl.addEventListener("click", e => {
+  const toggle = e.target.closest("[data-plugin]");
+  if (toggle) {
+    const on = !toggle.classList.contains("on");
+    toggle.classList.toggle("on", on);   // answer the click now, not on the round trip
+    sSend("plugin", { id: toggle.dataset.plugin, on: on });
+    return;
+  }
+  const allow = e.target.closest("[data-permission]");
+  if (allow) { sSend("permission", { id: allow.dataset.permission }); return; }
+
+  const reenroll = e.target.closest("[data-enroll]");
+  if (reenroll) { startSitting(reenroll.dataset.enroll); return; }
+
+  const forget = e.target.closest("[data-forget]");
+  if (forget) {
+    // No confirmation dialog: a JS confirm() would block the whole webview,
+    // and re-enrolling somebody is twenty seconds.
+    sSend("forget", { name: forget.dataset.forget });
+    return;
+  }
+
+  const btn = e.target.closest("[data-act]");
+  if (!btn) return;
+  switch (btn.dataset.act) {
+    case "close": sSend("close"); break;
+    case "saveProfile": {
+      const box = document.getElementById("sprofile");
+      sDraft = null;
+      sSavedAt = Date.now();
+      sSend("profile", { text: box ? box.value : "" });
+      break;
+    }
+    case "enrollNew": {
+      const box = document.getElementById("snewperson");
+      if (box && box.value.trim()) startSitting(box.value.trim());
+      break;
+    }
+    case "enrollCancel": sSend("enrollCancel"); sSitting = null; renderSettings(); break;
+    case "sittingDone": sSitting = null; renderSettings(); break;
+    case "checkUpdates": sSend("checkUpdates"); break;
+    case "quit": sSend("quit"); break;
+  }
+});
+
+// Keep what someone is typing across a re-render triggered by something else.
+sEl.addEventListener("input", e => {
+  if (e.target.id === "sprofile") sDraft = e.target.value;
+});
+
+function startSitting(name) {
+  sSitting = { running: true, phase: "faces", message: "Starting…", remaining: 0, captured: 0 };
+  renderSettings();
+  sSend("enroll", { name: name });
+}
+
 // ============================================================ external API
 window.neon = {
   wake, sleep,
@@ -840,6 +1217,25 @@ window.neon = {
     document.getElementById("debug").innerHTML = pairs
       .map(([k, v]) => `<span>${k}<b>${v}</b></span>`)
       .join("");
+  },
+  // ---- settings
+  settingsOpen(on) {
+    sEl.classList.toggle("on", !!on);
+    if (on) {
+      sSitting = null;
+      sDraft = null;
+      sSend("ready");     // the shell answers with settings(state)
+      renderSettings();
+    } else {
+      sEl.innerHTML = "";  // nothing left rendering behind the eyes
+    }
+  },
+  settings(state) { sState = state; renderSettings(); },
+  enrollment(patch) {
+    // Previews arrive far more often than progress, and each is its own
+    // partial — merge rather than replace so a frame doesn't wipe the phase.
+    sSitting = Object.assign(sSitting || {}, patch);
+    renderSettings();
   },
   get state() { return state; },
 };

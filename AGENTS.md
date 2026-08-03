@@ -115,16 +115,21 @@ file they belong to.
 | [docs/eyes.md](docs/eyes.md) | Renderer and animation channels, emotes, shortcuts, overlays, kiosk, build scripts |
 | [docs/people.md](docs/people.md) | Telling the family apart by voice and face: embeddings, enrollment, thresholds |
 | [docs/memory.md](docs/memory.md) | What she remembers across conversations, and the nightly dreaming pass |
+| [docs/plugins.md](docs/plugins.md) | Switchable features, the settings panel, and the JS↔Swift bridge |
 | [docs/tasks.md](docs/tasks.md) | The kitchen timer, background tasks, and how each reports back |
 | [docs/machine.md](docs/machine.md) | The machine, its tooling, and the permissions that keep breaking |
+| [docs/release.md](docs/release.md) | Sparkle, notarization, and cutting a release |
 | [wake/README.md](wake/README.md) | Training a wake model end to end (container pipeline) |
+| [README.md](README.md) | The public front door — written for a stranger, not for us |
 
 Current state in one paragraph: the ambient eyes and the spoken loop are
 built and running in the kitchen. Neon wakes on a locally trained "hey neon"
 model, holds a conversation through Gemini Live with grounding and thinking
 visible in her face, sees through the camera on request, emotes, remembers
-across sessions, and puts herself to sleep. Next: more tools; Claude Code
-handoff for long tasks; long-term memory.
+across sessions, recognizes who is talking, reads the family calendar, and
+puts herself to sleep. Features she might not be allowed are plugins, switched
+on in a settings panel over the eyes. Next: more plugins; long-term memory;
+shipping it to anyone who wants one.
 
 ## Current Decisions
 
@@ -143,6 +148,16 @@ handoff for long tasks; long-term memory.
 - Agents can commit completed, coherent work without waiting for Nick to make
   the commit or explicitly request one. Unfinished work should not be committed
   merely to make the working tree clean.
+- **This repository is public** (2026-08-03). Nothing personal goes in it:
+  no names, ages, addresses, or household facts, in code, comments, docs or
+  example output. All of that lives in `~/.config/neon/`, and the code reads it
+  from there. Use invented names in examples. This is a rule about the repo,
+  not about Neon — she knows the family perfectly well, from the profile.
+- Features somebody might reasonably not want are plugins, off by default
+  unless there is a reason otherwise (`docs/plugins.md`). "Off" means the tool
+  is never declared to the model, not that it is refused.
+- Background tasks via Claude Code are **shelved** — too slow to be part of a
+  spoken conversation. Off by default; see `docs/tasks.md`.
 - This file stays focused on facts, actual decisions, current intent, and open
   questions rather than generic guidance for AI agents.
 - It also stays *short*. It was 694 lines before the 2026-08-02 split, which

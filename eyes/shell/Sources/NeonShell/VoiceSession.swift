@@ -45,21 +45,6 @@ final class VoiceSession: NSObject {
         when someone's sweet. Don't announce it or mention the tool; just \
         let your eyes react while you talk.
 
-        For anything that needs real work — research, comparisons, looking \
-        several things up — hand it to Claude Code with \(startTaskToolName) \
-        and carry on talking; you'll be told when it lands. The family knows \
-        Claude is what's behind it, so "have Claude look into that" is a \
-        normal thing for them to say and you can mention it naturally. But \
-        when a result comes back, just say the answer — nobody needs "Claude \
-        says". Whatever you pass as instructions is all it gets: it can't ask \
-        you anything once it starts.
-
-        There is one kitchen timer, and it rings by itself on screen — you \
-        are not the alarm. Set it, check it, and stop it when asked. If \
-        someone says "stop", "turn it off" or similar while it's ringing, \
-        that's what they mean: call \(timerStopToolName) first, then say \
-        something short.
-
         Anything in square brackets is an event from the house, not somebody \
         speaking. Announce it the way a person in the kitchen would call it \
         out: short, natural, and about the thing itself — never an id, the \
@@ -167,6 +152,16 @@ final class VoiceSession: NSObject {
         task.resume()
         receiveLoop()
         var system = Self.system
+        // What she can do beyond being herself. Each switched-on plugin
+        // contributes a paragraph next to the tools it declares, so the prompt
+        // and the tool surface can never disagree about what exists.
+        let plugins = PluginRegistry.shared.active
+        for fragment in plugins.compactMap(\.promptFragment) {
+            system += "\n\n\(fragment)"
+        }
+        if !plugins.isEmpty {
+            trace("session", "plugins: " + plugins.map(\.id).joined(separator: ", "))
+        }
         // Household facts live outside the repo (~/.config/neon/profile.md).
         let profilePath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/neon/profile.md")
@@ -237,7 +232,10 @@ final class VoiceSession: NSObject {
                 \(recent)
                 """
         }
-        for msg in engine.openMessages(system: system) { sendJSON(msg) }
+        for msg in engine.openMessages(system: system,
+                                       tools: coreTools + PluginRegistry.shared.activeTools) {
+            sendJSON(msg)
+        }
         bumpIdle()
         NSLog("Neon voice: connecting to \(engine.name) (\(engine.model))")
     }
@@ -449,51 +447,6 @@ final class VoiceSession: NSObject {
                     requestSleep()
                 }
                 else if name == captureToolName { handleCapture(id: id) }
-                else if name == startTaskToolName {
-                    let title = (args["title"] as? String) ?? "task"
-                    let instructions = (args["instructions"] as? String) ?? ""
-                    switch TaskRunner.shared.start(title: title, instructions: instructions,
-                                                   requester: speakerHint) {
-                    case .success(let task):
-                        trace("task", "\(task.id) started: \(title)")
-                        if let resp = engine.toolResponseMessage(
-                            id: id, name: name,
-                            result: "Started as \(task.id). You'll be told when it's done — "
-                                  + "don't promise to watch it.") { sendJSON(resp) }
-                    case .failure(let refusal):
-                        trace("task", "start refused: \(refusal.reason)")
-                        if let resp = engine.toolResponseMessage(id: id, name: name,
-                                                                 result: refusal.reason) {
-                            sendJSON(resp)
-                        }
-                    }
-                }
-                else if name == listTasksToolName {
-                    let summary = TaskStore.shared.summary()
-                    trace("task", "list")
-                    if let resp = engine.toolResponseMessage(id: id, name: name, result: summary) {
-                        sendJSON(resp)
-                    }
-                }
-                else if name == checkTaskToolName {
-                    let taskID = (args["id"] as? String) ?? ""
-                    let detail = TaskStore.shared.describe(id: taskID)
-                    trace("task", "check \(taskID)")
-                    if let resp = engine.toolResponseMessage(id: id, name: name, result: detail) {
-                        sendJSON(resp)
-                    }
-                }
-                else if name == cancelTaskToolName {
-                    let taskID = (args["id"] as? String) ?? ""
-                    TaskRunner.shared.cancel(id: taskID)
-                    let ok = TaskStore.shared.cancel(id: taskID)
-                    trace("task", "cancel \(taskID) — \(ok ? "cancelled" : "not running")")
-                    if let resp = engine.toolResponseMessage(
-                        id: id, name: name,
-                        result: ok ? "Stopped \(taskID)." : "Nothing running with id \(taskID).") {
-                        sendJSON(resp)
-                    }
-                }
                 else if name == rememberToolName {
                     let fact = (args["fact"] as? String) ?? ""
                     let saved = MemoryStore.shared.remember(fact)
@@ -516,43 +469,38 @@ final class VoiceSession: NSObject {
                         sendJSON(resp)
                     }
                 }
-                else if name == timerToolName {
-                    // No label is the normal case — the clock alone is the UI.
-                    let label = (args["label"] as? String) ?? ""
-                    let seconds = (args["seconds"] as? Double) ?? 60
-                    let replaced = KitchenTimer.shared.isActive
-                    KitchenTimer.shared.start(label: label, seconds: seconds)
-                    trace("timer", "set \"\(label)\" \(Int(seconds))s"
-                        + (replaced ? " (replaced the previous one)" : ""))
-                    if let resp = engine.toolResponseMessage(
-                        id: id, name: name,
-                        result: replaced
-                            ? "Timer set, replacing the one that was running. It rings on its own."
-                            : "Timer set. It rings on its own — you don't need to watch it.") {
-                        sendJSON(resp)
-                    }
-                }
-                else if name == timerCheckToolName {
-                    let status = KitchenTimer.shared.status()
-                    trace("timer", "check — \(status)")
-                    if let resp = engine.toolResponseMessage(id: id, name: name, result: status) {
-                        sendJSON(resp)
-                    }
-                }
-                else if name == timerStopToolName {
-                    let stopped = KitchenTimer.shared.stop()
-                    trace("timer", stopped ? "stopped" : "stop — nothing running")
-                    if let resp = engine.toolResponseMessage(
-                        id: id, name: name,
-                        result: stopped ? "Stopped." : "There's no timer running.") {
-                        sendJSON(resp)
-                    }
-                }
                 else if name == emoteToolName {
                     let emotion = (args["emotion"] as? String) ?? "happy"
                     trace("emote", emotion)
                     onEmote(emotion)
                     if let resp = engine.toolResponseMessage(id: id, name: name, result: "done") {
+                        sendJSON(resp)
+                    }
+                }
+                // Everything else belongs to a plugin. Nothing is dispatched
+                // that wasn't declared, so a name arriving here that no active
+                // plugin owns is the model inventing a capability — say so
+                // rather than going silent, which reads to the model as a tool
+                // that hung.
+                else if let plugin = PluginRegistry.shared.owner(ofTool: name) {
+                    let context = PluginContext(requester: speakerHint) { [weak self] kind, text in
+                        self?.trace(kind, text)
+                    }
+                    plugin.handle(tool: name, args: args, context: context) { [weak self] result in
+                        DispatchQueue.main.async {
+                            guard let self, !self.closed else { return }
+                            if let resp = self.engine.toolResponseMessage(
+                                id: id, name: name, result: result) { self.sendJSON(resp) }
+                        }
+                    }
+                }
+                else {
+                    NSLog("Neon voice: no plugin owns tool \(name)")
+                    trace("error", "unknown tool \(name)")
+                    if let resp = engine.toolResponseMessage(
+                        id: id, name: name,
+                        result: "You don't have that tool — it isn't switched on. "
+                              + "Tell them plainly you can't do that.") {
                         sendJSON(resp)
                     }
                 }

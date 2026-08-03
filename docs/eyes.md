@@ -46,8 +46,12 @@ build scripts. The first ambient-assistant implementation, under `eyes/`.
   E cycle engine · T ghost mode (transparent window/canvas so the eyes
   float over the desktop — for watching Claude Code work underneath) · P
   cycle state previews (awake → hearing → thinking → speaking → off, an
-  on-screen badge names each; works in plain Chrome too) · Tab (hold)
-  shortcut legend.
+  on-screen badge names each; works in plain Chrome too) · `,` settings
+  (`⌘,` too) · Tab (hold) shortcut legend.
+- **While settings is open the page owns the keyboard.** Every key above is
+  swallowed by the shell's monitor and would otherwise fire mid-word while
+  somebody types into a text box; with the panel up only Esc is intercepted,
+  and it closes the panel. See `docs/plugins.md`.
 - The mouse cursor is hidden whenever Neon is frontmost and opaque
   (`NSCursor.hide()` on activate, unhide on resign — they are a balanced pair,
   and an unmatched hide leaves the cursor invisible system-wide until the

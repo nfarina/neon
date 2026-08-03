@@ -110,6 +110,12 @@ Wake-word detection is [wake.md](wake.md); the renderer is [eyes.md](eyes.md).
   session closes when the queue is empty AND no audio has arrived for 0.7 s
   (12 s cap). Leak formats observed so far: `do_call:go_to_sleep{}` and
   `<go_to_sleep>` — the fallback matches on the tool-name substring.
+- **The tool surface is assembled per session**, not hardcoded per engine:
+  `coreTools` (sleep, capture, emote, remember, recall) plus whatever plugins
+  are switched on, rendered into each provider's wire format from one neutral
+  `ToolSpec`. See `docs/plugins.md`. This quietly fixed a real drift — the
+  OpenAI engine used to declare `go_to_sleep` and nothing else, because the
+  list was hand-written per engine and only Gemini's was kept current.
 - Tool calling works (validated by `voice/gemini-tool-test.mjs`; wire shape
   `toolCall.functionCalls[{name, args, id}]`). First tool: `go_to_sleep` —
   declared to both engines; the model calls it when the user says goodbye or

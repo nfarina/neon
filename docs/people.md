@@ -146,11 +146,21 @@ to expect from Sam and Alex.
 
 ## Enrolling
 
-One sitting per person, both modalities:
+One sitting per person, both modalities. The ordinary way is **Settings →
+People → enroll** (`,` opens settings), which runs the same sitting with a
+mirrored live camera preview — worth more than it sounds, since "look at the
+camera for eight seconds" without seeing yourself is how you end up with six
+excellent embeddings of your ear.
+
+The terminal path is unchanged and still the one to use when something is wrong
+and you want the numbers in a scrollback buffer:
 
 ```sh
 NEON_ENROL=Sam eyes/Neon.app/Contents/MacOS/Neon
 ```
+
+Both drive `EnrollmentSession`, which is timer-based rather than a blocking
+loop — the panel would otherwise freeze the UI showing its own countdown.
 
 Eight seconds looking at the camera (move your head a little — a few angles
 beat one perfect shot; the best six frames by Vision's quality score are kept),

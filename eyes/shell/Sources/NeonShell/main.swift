@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var debugVisible = false
     private var statsTimer: Timer?
     private var micTimer: Timer?
+    private let settings = SettingsBridge()
     private let display = DisplayKeeper()
     private var wakeHeard = ""  // latest wake-listener transcript, for the overlay
     private var providerName = ProcessInfo.processInfo.environment["NEON_PROVIDER"]
@@ -40,8 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
         guard let screen = NSScreen.main else { fatalError("no screen") }
 
-        webView = WKWebView(frame: screen.frame, configuration: WKWebViewConfiguration())
+        // The settings panel is the first thing that talks *back* to the shell,
+        // so the page gets a message handler as well as evaluateJavaScript.
+        let config = WKWebViewConfiguration()
+        config.userContentController.add(settings, name: SettingsBridge.handlerName)
+        webView = WKWebView(frame: screen.frame, configuration: config)
         webView.isInspectable = true  // allow Safari Web Inspector while developing
+        installSettingsBridge()
 
         window = NSWindow(
             contentRect: screen.frame,
@@ -67,12 +73,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.awaitingPermission(waiting, reason: "location permission dialog")
         }
         LocationProvider.shared.start()
-        // Calendars is asked here, at launch, rather than the first time a task
-        // wants it: by then the kiosk is up and the prompt is unreachable.
+        // Calendars is *not* asked for at launch. It belongs to a plugin, and
+        // a plugin asks when somebody turns it on in settings — standing at
+        // the machine, having just clicked Allow, which is the only moment a
+        // TCC dialog can actually be answered. (The step-aside plumbing is
+        // still wired up here, because the prompt lands behind the kiosk
+        // window wherever it is raised from.)
         CalendarBridge.onAwaitingPermission = { [weak self] waiting in
             self?.awaitingPermission(waiting, reason: "calendar permission dialog")
         }
-        CalendarBridge.primeAccess()
         idleTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             self?.checkIdle()
         }
@@ -91,6 +100,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if Kiosk.isStepAsideChord(event) {
                 self?.stepAside(for: 45, reason: "make way for a system dialog")
                 return nil
+            }
+            if Kiosk.isSettingsChord(event) {
+                self?.settings.toggle()
+                return nil
+            }
+            // With the panel up the page owns the keyboard — the single-letter
+            // shortcuts below would otherwise fire while someone is typing
+            // their household into a text box, and "d" would toggle the debug
+            // overlay mid-word. Esc closes; everything else goes through.
+            if self?.settings.isOpen == true {
+                if event.type == .keyDown, event.keyCode == 53 {
+                    self?.settings.close()
+                    return nil
+                }
+                return event
             }
             if event.type == .keyUp {
                 if event.keyCode == 48 { self?.showLegend(false); return nil }
@@ -132,6 +156,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 48:  // tab (hold) — keyboard shortcut legend
                 if !event.isARepeat { self?.showLegend(true) }
                 return nil
+            case 43:  // , — settings, the Mac-standard key for it
+                self?.settings.toggle()
+                return nil
             default:
                 return event
             }
@@ -152,7 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         listener.onNameHeard = { [weak self] in
             // Pre-wake: eyes open and listen while the speaker finishes.
-            guard let self, self.voiceSession == nil else { return }
+            guard let self, self.voiceSession == nil, !self.settings.isOpen else { return }
             self.noteActivity()
             self.webView.evaluateJavaScript("window.neon && neon.wake()")
         }
@@ -256,6 +283,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // ==================================================== settings
+    // Comma opens the panel (Cmd-, too, out of habit). While it is up Neon is
+    // asleep and stays asleep: the session closes, wakes are ignored, and the
+    // cursor comes back because there is now something to click.
+    //
+    // The wake *listeners* keep running rather than being stopped. OpenWake
+    // has no stop — it is designed to run for months — and the deafness
+    // watchdog exists precisely to restart a listener that went quiet, so
+    // stopping one deliberately would have the watchdog fighting to bring it
+    // back. Gating the detections is the honest equivalent and can't leave her
+    // deaf afterwards.
+
+    private func installSettingsBridge() {
+        settings.evaluate = { [weak self] js in
+            self?.webView.evaluateJavaScript(js)
+        }
+        settings.log = { [weak self] kind, text in
+            self?.logEvent(kind, text)
+        }
+        settings.onNeedsScreen = { [weak self] reason in
+            self?.stepAside(for: 90, reason: reason)
+        }
+        settings.onOpenChanged = { [weak self] open in
+            guard let self else { return }
+            self.noteActivity()
+            if open {
+                // Nobody wants to be overheard by the thing whose settings
+                // they are reading.
+                self.voiceSession?.close(reason: "manual")
+                self.webView.evaluateJavaScript("window.neon && neon.sleep()")
+            } else {
+                // Anything that finished while the panel was up is still news.
+                self.flushAnnouncements()
+            }
+            self.updateCursor()
+        }
+        Updater.shared.onNeedsScreen = { [weak self] reason in
+            self?.stepAside(for: 120, reason: reason)
+        }
+    }
+
     // ==================================================== deep sleep
     // After a long stretch with nobody talking to her, the eyes fade to an
     // ember and the backlight goes down with them — a bright rectangle in a
@@ -305,6 +373,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // her anyway — and a research task running at 2am should not hold the
         // kitchen display up all night.
         guard !KitchenTimer.shared.isActive else { return }
+        // Somebody is standing at the machine reading the panel.
+        guard !settings.isOpen else { return }
         guard !deepAsleep, voiceSession == nil,
               Date().timeIntervalSince(lastActivity) > deepSleepAfter else { return }
         deepAsleep = true
@@ -405,7 +475,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A ringing timer is the one moment the cursor earns its place: Nick
         // asked to be able to click the alarm off, which needs something to
         // click with.
-        setCursorHidden(NSApp.isActive && !transparentMode && !KitchenTimer.shared.ringing)
+        setCursorHidden(NSApp.isActive && !transparentMode
+                        && !KitchenTimer.shared.ringing && !settings.isOpen)
     }
 
     /// NSCursor.hide/unhide are a balanced pair — an unmatched hide leaves the
@@ -465,7 +536,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Wake and say everything that's been waiting. Several results arriving
     /// together become one wake rather than a queue of them.
     private func flushAnnouncements() {
-        guard !pendingAnnouncements.isEmpty, voiceSession == nil else { return }
+        // Held, not dropped: `markAnnounced` happens below, so a result that
+        // lands while the panel is up is still news when it closes.
+        guard !pendingAnnouncements.isEmpty, voiceSession == nil,
+              !settings.isOpen else { return }
         let held = pendingAnnouncements
         pendingAnnouncements = []
         for task in held { TaskStore.shared.markAnnounced(id: task.id) }
@@ -527,6 +601,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func triggerWake(command: String? = nil, prelude: Data? = nil,
                              preludeFrom: Date? = nil) {
+        // One gate for every path in: the wake word, the W key, an
+        // announcement landing. Settings is a modal moment.
+        guard !settings.isOpen else {
+            logEvent("wake", "ignored — settings is open")
+            return
+        }
         noteActivity()
         webView.evaluateJavaScript("window.neon && neon.wake()")
         startVoiceSession(command: command, prelude: prelude, preludeFrom: preludeFrom)
@@ -770,6 +850,33 @@ if let spec = ProcessInfo.processInfo.environment["NEON_TASK_TEST"] {
     exit(0)
 }
 
+// What the settings panel would be handed, without a window or a microphone:
+// NEON_SETTINGS_TEST=1. Prints the state object, the tool surface each engine
+// would be sent, and which plugins are on — the quickest way to confirm that
+// switching something off really does remove it from the session rather than
+// merely refusing it later.
+if ProcessInfo.processInfo.environment["NEON_SETTINGS_TEST"] == "1" {
+    let state = SettingsBridge().stateObject()
+    if let data = try? JSONSerialization.data(withJSONObject: state,
+                                              options: [.prettyPrinted, .sortedKeys]) {
+        print(String(decoding: data, as: UTF8.self))
+    }
+    let registry = PluginRegistry.shared
+    print("\nplugins:")
+    for p in registry.all {
+        let on = registry.isEnabled(p.id)
+        let why = on && !p.isUsable ? " (on, but permission missing)" : ""
+        print("  \(on ? "●" : "○") \(p.id)\(why)")
+    }
+    let tools = coreTools + registry.activeTools
+    print("\ntools this session would declare (\(tools.count)):")
+    for t in tools {
+        let params = t.params.map { $0.name + ($0.required ? "" : "?") }.joined(separator: ", ")
+        print("  \(t.name)(\(params))")
+    }
+    exit(0)
+}
+
 // Pipeline check with no enrollment: NEON_FACEID_TEST=1
 if ProcessInfo.processInfo.environment["NEON_FACEID_TEST"] != nil {
     Enrollment.faceCheck()
@@ -817,6 +924,27 @@ if let dir = ProcessInfo.processInfo.environment["NEON_VOICEID_TEST"] {
 // Neon.app and no second prompt appears.
 if let days = ProcessInfo.processInfo.environment["NEON_CALENDAR_DAYS"] {
     CalendarBridge.dump(days: Int(days) ?? 7)
+}
+// What the *model* is handed, which is not the JSON above: NEON_CALENDAR_SAY=2
+// prints the day-grouped text `check_calendar` returns. Worth looking at with
+// real events in it — this is the thing that gets read aloud, and an all-day
+// event landing under the wrong heading is invisible in JSON and obvious here.
+if let spec = ProcessInfo.processInfo.environment["NEON_CALENDAR_SAY"] {
+    let plugin = CalendarPlugin.shared
+    let context = PluginContext(requester: nil) { kind, text in print("[\(kind)] \(text)") }
+    let done = DispatchSemaphore(value: 0)
+    // A number is a day count; anything else is a search.
+    if let days = Double(spec) {
+        plugin.handle(tool: "check_calendar", args: ["days": days], context: context) {
+            print($0); done.signal()
+        }
+    } else {
+        plugin.handle(tool: "search_calendar", args: ["query": spec], context: context) {
+            print($0); done.signal()
+        }
+    }
+    done.wait()
+    exit(0)
 }
 if ProcessInfo.processInfo.environment["NEON_CALENDAR_LIST"] == "1" {
     CalendarBridge.listCalendars()
