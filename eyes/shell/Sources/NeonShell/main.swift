@@ -221,6 +221,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         pushTimer(KitchenTimer.shared)
 
+        // Anything that finished while she was shut down — a crash, a rebuild
+        // mid-task — is still news when she comes back.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self else { return }
+            // Only recent news. Anything older than an hour is marked spoken
+            // without saying it — waking the kitchen to recite yesterday's
+            // results would be worse than losing them.
+            let unspoken = TaskStore.shared.tasks.filter { !$0.isActive && !$0.announced }
+            let cutoff = Date().addingTimeInterval(-3600)
+            for stale in unspoken where (stale.finishedAt ?? .distantPast) < cutoff {
+                TaskStore.shared.markAnnounced(id: stale.id)
+            }
+            let fresh = unspoken.filter { ($0.finishedAt ?? .distantPast) >= cutoff }
+            guard !fresh.isEmpty else { return }
+            self.pendingAnnouncements.append(contentsOf: fresh)
+            self.flushAnnouncements()
+        }
+
         // First line of the log, once the page exists to receive it.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self else { return }
@@ -400,19 +418,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Nick's call, 2026-08-02: anything may wake the room, deep sleep
     // included. If that turns out to be annoying at 3am, gate it here.
 
+    /// Announcements that couldn't be delivered yet — a task that finished in
+    /// the moment between `go_to_sleep` and the socket actually closing used to
+    /// be dropped in silence, marked announced, and never spoken.
+    private var pendingAnnouncements: [NeonTask] = []
+
     private func announce(_ task: NeonTask) {
         logEvent("task", "\(task.id) \(task.status.rawValue) — announcing")
-        TaskStore.shared.markAnnounced(id: task.id)
-        if let session = voiceSession {
-            // Mid-conversation: slip it in as a turn she can work into what
-            // she's already saying.
-            session.inject(task.completionNote)
-        } else {
-            // Asleep: the openWakeWord path with a different trigger. The eyes
-            // open, she announces, and the prompt tells her to sleep again
-            // unless someone answers.
-            triggerWake(command: task.completionNote)
+        // Mid-conversation: slip it in as a turn she can work into what she's
+        // already saying. inject() reports whether the session could take it.
+        if let session = voiceSession, session.inject(task.completionNote) {
+            TaskStore.shared.markAnnounced(id: task.id)
+            return
         }
+        pendingAnnouncements.append(task)
+        // With no session at all, deliver now; otherwise the closing session
+        // hands over in onClosed. Starting one on top of a session that is
+        // still shutting down would be refused.
+        if voiceSession == nil { flushAnnouncements() }
+        else { logEvent("task", "holding \(task.id) until the session closes") }
+    }
+
+    /// Wake and say everything that's been waiting. Several results arriving
+    /// together become one wake rather than a queue of them.
+    private func flushAnnouncements() {
+        guard !pendingAnnouncements.isEmpty, voiceSession == nil else { return }
+        let held = pendingAnnouncements
+        pendingAnnouncements = []
+        for task in held { TaskStore.shared.markAnnounced(id: task.id) }
+        let note = held.map(\.completionNote).joined(separator: " ")
+        logEvent("task", "waking to announce \(held.count) result(s)")
+        triggerWake(command: note)
     }
 
     private func pushTasks(_ tasks: [NeonTask]) {
@@ -640,6 +676,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // She put herself to sleep (or S did) — eyes close right away;
                 // the slow dozing-off animation is reserved for idle silence.
                 self.webView.evaluateJavaScript("window.neon && neon.sleep()")
+            }
+            // A result that landed while she was closing gets said now. The
+            // pause lets the goodbye finish and the eyes shut, so waking again
+            // reads as a new thought rather than a stutter.
+            if !self.pendingAnnouncements.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    self.flushAnnouncements()
+                }
             }
         }
         voiceSession = session

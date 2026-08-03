@@ -100,6 +100,13 @@ final class VoiceSession: NSObject {
     private var dozeTimer: Timer?
     private var lastAudioAt = Date.distantPast  // last audio *received* (chunks may trail the tool call)
     private var thinkingActive = false
+    private var ready = false
+    /// Any message from the server, of any kind. Thinking with `includeThoughts`
+    /// can go quiet for longer than the idle timeout, and a tool round trip is
+    /// silent by nature — both used to look exactly like an empty room.
+    private var lastServerAt = Date.distantPast
+    /// Notes that arrived before setup finished.
+    private var pendingNotes: [String] = []
     // Last time the mic carried voice-level energy. Input transcription
     // arrives in a clump when the model responds, not while Nick talks, so
     // this is the only live signal that he's mid-sentence. (Echo-cancelled
@@ -272,11 +279,24 @@ final class VoiceSession: NSObject {
     /// room said — a timer going off, a task finishing. Arrives as a user turn
     /// because that's the only role the live API takes after setup; the system
     /// prompt tells her these are events to relay, not speech to answer.
-    func inject(_ note: String) {
-        guard !closed, !sleepRequested else { return }
+    /// Returns false when this session can't carry the note — closing, or
+    /// already asked to sleep. The caller has to know: a dropped announcement
+    /// is a task result nobody ever hears, which is exactly what happened when
+    /// a task landed in the moment between `go_to_sleep` and the socket
+    /// closing.
+    @discardableResult
+    func inject(_ note: String) -> Bool {
+        guard !closed, !sleepRequested else { return false }
+        // Before setup completes there is nothing to inject into; hold it and
+        // send once the session is ready.
+        guard ready else {
+            pendingNotes.append(note)
+            return true
+        }
         trace("task", "injected: \(note)")
         for m in engine.readyMessages(greeting: note) { sendJSON(m) }
         bumpIdle()
+        return true
     }
 
     /// External evidence that someone in the room is talking (the wake
@@ -353,11 +373,18 @@ final class VoiceSession: NSObject {
     }
 
     private func handleMessage(_ msg: [String: Any]) {
+        lastServerAt = Date()
         for event in engine.parse(msg) {
             switch event {
             case .ready:
                 NSLog("Neon voice: session ready")
                 trace("session", "ready")
+                ready = true
+                defer {
+                    let held = pendingNotes
+                    pendingNotes = []
+                    for note in held { inject(note) }
+                }
                 if let cmd = firstUtterance { record("Nick", cmd) }
                 let resolvedPrelude = preludeAudio
                     ?? preludeFrom.map { AudioRing.shared.audio(since: $0) }
@@ -729,9 +756,17 @@ final class VoiceSession: NSObject {
             self.idleTimer?.invalidate()
             self.idleTimer = Timer.scheduledTimer(withTimeInterval: Self.idleSeconds, repeats: false) { [weak self] _ in
                 guard let self else { return }
-                // Never time out while a reply is still playing or while
-                // someone in the room is mid-sentence.
-                if self.pendingPlaybacks > 0 || Date().timeIntervalSince(self.lastVoiceAt) < 1.5 {
+                // Never time out while a reply is still playing, while someone
+                // in the room is mid-sentence, while she is reasoning, or while
+                // the server is still saying anything at all. Nick caught her
+                // dozing off mid-thought: thought parts reset this clock, but
+                // MEDIUM thinking can leave a gap longer than the timeout
+                // between them, and silence from the model is not silence from
+                // the room.
+                if self.pendingPlaybacks > 0
+                    || Date().timeIntervalSince(self.lastVoiceAt) < 1.5
+                    || self.thinkingActive
+                    || Date().timeIntervalSince(self.lastServerAt) < 3 {
                     self.bumpIdle()
                 } else {
                     self.enterDoze()
@@ -744,7 +779,7 @@ final class VoiceSession: NSObject {
     // stays open, so someone resuming mid-doze is still heard. The session
     // closes only when the doze animation has fully completed (~5 s).
     private func enterDoze() {
-        guard !dozing, !closed, !sleepRequested else { return }
+        guard !dozing, !closed, !sleepRequested, !thinkingActive else { return }
         dozing = true
         NSLog("Neon voice: dozing (grace window)")
         trace("sleep", "idle \(Int(Self.idleSeconds))s — dozing (grace window)")
