@@ -19,9 +19,9 @@ One JSON object per line so the file stays greppable, hand-editable and
 append-friendly. Search is keyword scoring, not embeddings: terms are
 lowercased, stopped, crudely de-pluralised, then weighted by inverse document
 frequency so a rare word ("shellfish") counts for far more than a common one
-("nick"), with a small recency/use boost. No model call, no network, no
-dependency — and at kitchen scale the retrieval quality is indistinguishable
-from embeddings. Verified on a realistic set: "what can robin eat" → the
+(a household name), with a small recency/use boost. No model call, no network,
+no dependency — and at kitchen scale the retrieval quality is indistinguishable
+from embeddings. Verified on a realistic set: "what can she eat" → the
 shellfish allergy, "capital of ohio" → correctly nothing.
 
 `remember` de-duplicates on token overlap (>0.6 of the smaller memory) and
@@ -78,8 +78,8 @@ Nick runs it as a nightly Claude Desktop Routine. The prompt:
 ```text
 Consolidate Neon's long-term memory.
 
-Neon is an AI assistant living on a MacBook in the kitchen of a family home in
-a family kitchen. Who lives there is in ~/.config/neon/profile.md.
+Neon is an AI assistant living on a MacBook in a family kitchen. Who lives
+here is in ~/.config/neon/profile.md — read that first.
 
 Read:
   ~/.config/neon/memories.jsonl      — one JSON memory per line

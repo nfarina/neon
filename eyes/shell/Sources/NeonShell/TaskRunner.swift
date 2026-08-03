@@ -207,9 +207,21 @@ final class TaskRunner {
                                 withIntermediateDirectories: true)
         guard !fm.fileExists(atPath: claudeMD.path) else { return }
         guard let seed = Self.seedURL(),
-              let text = try? String(contentsOf: seed, encoding: .utf8) else {
+              var text = try? String(contentsOf: seed, encoding: .utf8) else {
             dbg("taskrunner: no seed CLAUDE.md found")
             return
+        }
+        // The seed in the repo describes the job, not the family. Who actually
+        // lives here comes from ~/.config/neon/profile.md — the same file the
+        // voice session reads, and the same reason: household facts are not
+        // source code, and this repo is public.
+        let profilePath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/neon/profile.md")
+        if let profile = try? String(contentsOf: profilePath, encoding: .utf8),
+           !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            text = text.replacingOccurrences(
+                of: "## Who you're working for\n",
+                with: "## Who you're working for\n\n\(profile)\n")
         }
         try? text.write(to: claudeMD, atomically: true, encoding: .utf8)
         dbg("taskrunner: seeded \(claudeMD.path)")
