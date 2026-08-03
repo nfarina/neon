@@ -80,20 +80,32 @@ final class FaceID {
     /// Every usable face in the image, best-quality first.
     func faces(in image: CGImage) -> [Face] {
         guard isAvailable else { return [] }
-        let request = VNDetectFaceLandmarksRequest()
+        let landmarks = VNDetectFaceLandmarksRequest()
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
-        do { try handler.perform([request]) } catch {
+        do { try handler.perform([landmarks]) } catch {
             dbg("faceid: detection failed: \(error.localizedDescription)")
             return []
         }
-        guard let observations = request.results, !observations.isEmpty else { return [] }
-        return observations.compactMap { face -> Face? in
+        guard let observations = landmarks.results, !observations.isEmpty else { return [] }
+
+        // Capture quality is a *separate* request — VNDetectFaceLandmarksRequest
+        // leaves faceCaptureQuality nil, so scoring frames by it silently
+        // ranked everything equal at the fallback value. Fed the landmark
+        // observations so it scores the same faces rather than re-detecting.
+        var quality: [Float] = Array(repeating: 0.5, count: observations.count)
+        let qualityRequest = VNDetectFaceCaptureQualityRequest()
+        qualityRequest.inputFaceObservations = observations
+        if (try? handler.perform([qualityRequest])) != nil,
+           let scored = qualityRequest.results, scored.count == observations.count {
+            quality = scored.map { $0.faceCaptureQuality ?? 0.5 }
+        }
+
+        return observations.enumerated().compactMap { i, face -> Face? in
             guard let points = fivePoints(face, imageSize: CGSize(width: image.width,
                                                                  height: image.height)),
                   let chip = align(image, from: points),
                   let embedding = embed(chip) else { return nil }
-            return Face(embedding: embedding,
-                        quality: face.faceCaptureQuality ?? 0.5,
+            return Face(embedding: embedding, quality: quality[i],
                         area: face.boundingBox.width * face.boundingBox.height)
         }.sorted { $0.quality > $1.quality }
     }

@@ -15,6 +15,11 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private var frames = 0
     private static let interval: TimeInterval = 1.0
 
+    /// Seconds between delivered frames. 1 fps is right during a session (a
+    /// frame is ~250 tokens if it's sent), but enrolment wants a pool to pick
+    /// the best shots from, and those frames never leave the machine.
+    var interval = CameraFeed.interval
+
     func start() {
         AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
             dbg("camera auth: \(granted)")
@@ -52,7 +57,7 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         let now = Date()
-        guard now.timeIntervalSince(lastSent) >= Self.interval,
+        guard now.timeIntervalSince(lastSent) >= interval,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         lastSent = now
         let image = CIImage(cvPixelBuffer: pixelBuffer)

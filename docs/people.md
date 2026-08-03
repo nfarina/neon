@@ -50,7 +50,19 @@ Six seconds of camera, then frame-to-frame similarity for the *same* face.
 That is the real test of the chain: detection, landmarks, alignment and
 embedding all have to be right for one face to land in the same place twice.
 Expect a mean above ~0.75; scattered values mean alignment is off, not that the
-model is bad.
+model is bad. First real run: 5/5 faces, mean 0.841 (min 0.689, max 0.952).
+
+That same run exposed a quiet bug worth knowing about: capture quality came
+back `min 0.50 mean 0.50 max 0.50` — every frame scoring the fallback constant,
+because **`VNDetectFaceLandmarksRequest` never populates `faceCaptureQuality`**.
+It needs its own `VNDetectFaceCaptureQualityRequest`, fed the landmark
+observations via `inputFaceObservations` so it scores the same faces instead of
+re-detecting. Until that was fixed, "keep the best six frames by quality" was
+keeping an arbitrary six. A metric with no variance at all is the tell.
+
+Enrolment also runs the camera at 4 fps rather than the session's 1 fps
+(`CameraFeed.interval`) — choosing six frames from five is not a choice, and
+enrolment frames never leave the machine so there is no token cost to them.
 
 ## Voices
 

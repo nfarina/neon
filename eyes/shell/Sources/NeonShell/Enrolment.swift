@@ -35,6 +35,7 @@ enum Enrolment {
         }
         print("Look at the camera for \(Int(seconds))s…")
         let camera = CameraFeed()
+        camera.interval = 0.25
         var found: [(Float, [Float])] = []
         var frames = 0
         let lock = NSLock()
@@ -83,6 +84,7 @@ enum Enrolment {
         print("little — a few angles beat one perfect shot. Starting…")
 
         let camera = CameraFeed()
+        camera.interval = 0.25          // a pool worth choosing from
         var best: [(quality: Float, embedding: [Float])] = []
         let lock = NSLock()
         camera.onFrame = { b64 in
