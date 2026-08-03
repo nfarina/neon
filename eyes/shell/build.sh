@@ -35,6 +35,17 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/web" "$APP/Contents/Frameworks"
 cp .build/release/NeonShell "$APP/Contents/MacOS/Neon"
 cp ../web/index.html "$APP/Contents/Resources/web/index.html"
+
+# The icon barely matters on the kitchen wall — she is fullscreen and there is
+# no Dock — but it is the project's face everywhere else: Sparkle's update
+# window, the GitHub release, Finder for anyone who downloads her.
+# Regenerate with: swift eyes/icon.swift eyes/art/icon-source.png
+ICON=../Neon.icns
+if [[ -f "$ICON" ]]; then
+  cp "$ICON" "$APP/Contents/Resources/Neon.icns"
+else
+  echo "note: no eyes/Neon.icns — building without an icon" >&2
+fi
 # Seed for ~/Code/neon-agent/CLAUDE.md, written on the first task and owned by
 # the agent afterwards. Only reachable with the tasks plugin switched on.
 cp ../../agent/CLAUDE.md "$APP/Contents/Resources/agent-CLAUDE.md"
@@ -63,6 +74,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleDisplayName</key><string>Neon</string>
   <key>CFBundleIdentifier</key><string>com.nickfarina.neon</string>
   <key>CFBundleExecutable</key><string>Neon</string>
+  <key>CFBundleIconFile</key><string>Neon</string>
   <key>CFBundleVersion</key><string>${BUILD}</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
