@@ -149,10 +149,17 @@ shipping it to anyone who wants one.
   the commit or explicitly request one. Unfinished work should not be committed
   merely to make the working tree clean.
 - **This repository is public** (2026-08-03). Nothing personal goes in it:
-  no names, ages, addresses, or household facts, in code, comments, docs or
-  example output. All of that lives in `~/.config/neon/`, and the code reads it
-  from there. Use invented names in examples. This is a rule about the repo,
-  not about Neon — she knows the family perfectly well, from the profile.
+  no names, ages, addresses, or household facts, in code, comments, docs,
+  example output — or commit messages, which is where it hid last time. All of
+  that lives in `~/.config/neon/`, and the code reads it from there. Use
+  invented names in examples. This is a rule about the repo, not about Neon —
+  she knows the family perfectly well, from the profile.
+- That includes the wake-word **voice recordings**, which used to be committed
+  as their own backup and now live in `~/.config/neon/wake/` (`run.sh` mounts
+  them back for the container). Do not re-commit them, however tempting the
+  backup argument is; `wake/data/README.md` has the whole story.
+- History was rewritten on 2026-08-03 to remove all of the above. Every commit
+  SHA before that date changed.
 - Features somebody might reasonably not want are plugins, off by default
   unless there is a reason otherwise (`docs/plugins.md`). "Off" means the tool
   is never declared to the model, not that it is refused.
