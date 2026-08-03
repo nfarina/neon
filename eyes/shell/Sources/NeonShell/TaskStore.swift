@@ -36,6 +36,14 @@ struct NeonTask: Codable, Identifiable {
 
     var isActive: Bool { status == .running }
 
+    /// On screen: running, or finished recently enough that someone walking
+    /// past still wants to see it. The store keeps results far longer than
+    /// this — "what did that chips task say?" is a fair question an hour
+    /// later, even though the left edge should be a picture of *now*.
+    var onScreen: Bool {
+        isActive || Date().timeIntervalSince(finishedAt ?? .distantPast) < 120
+    }
+
     /// How the model should hear about this when it finishes.
     var completionNote: String {
         let outcome = status == .done ? "finished" : status.rawValue
@@ -118,13 +126,18 @@ final class TaskStore {
         save()
     }
 
-    /// Drop finished tasks once they've been announced and had their moment on
-    /// screen, so the list stays a picture of *now*.
+    /// Forget finished work after a day. Screen lifetime is `onScreen`; this
+    /// is only about the store growing without bound.
+    ///
+    /// It used to prune two minutes after announcement, which quietly deleted
+    /// the result too — and required `announced`, so anything started outside
+    /// a voice session (the test harness) was kept forever. Both halves were
+    /// wrong in opposite directions.
     func prune() {
-        let cutoff = Date().addingTimeInterval(-120)
+        let cutoff = Date().addingTimeInterval(-86_400)
         let before = tasks.count
         tasks.removeAll { t in
-            !t.isActive && t.announced && (t.finishedAt ?? .distantPast) < cutoff
+            !t.isActive && (t.finishedAt ?? .distantPast) < cutoff
         }
         if tasks.count != before { changed() }
     }
@@ -176,10 +189,15 @@ final class TaskStore {
               let stored = try? dec.decode([NeonTask].self, from: data) else { return }
         tasks = stored
         nextNumber = (tasks.compactMap { Int($0.id.dropFirst()) }.max() ?? 0) + 1
-        // Nothing survives a relaunch: an agent task's process died with us.
+        // Nothing survives a relaunch: an agent task is a child process and
+        // died with us. Stamp finishedAt as well as the status — without it
+        // the task looked infinitely old and was pruned before anyone could
+        // see that it had been interrupted at all. Left announced, since
+        // waking the room to report a task killed by a rebuild is noise.
         for i in tasks.indices where tasks[i].isActive {
             tasks[i].status = .failed
             tasks[i].detail = "interrupted by a restart"
+            tasks[i].finishedAt = Date()
             tasks[i].announced = true
         }
     }

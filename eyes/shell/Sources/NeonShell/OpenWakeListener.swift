@@ -101,7 +101,13 @@ final class OpenWakeListener {
     /// stopped receiving audio looks exactly like one that hears nothing —
     /// silent, and indistinguishable from a quiet room.
     private(set) var lastChunkAt = Date.distantPast
-    var secondsSinceAudio: TimeInterval { Date().timeIntervalSince(lastChunkAt) }
+    /// Nil until the tap is attached, so the watchdog can't cry deafness at a
+    /// listener that hasn't started listening yet — a slow microphone
+    /// (permission prompt, device wake) would otherwise trip it at launch.
+    var secondsSinceAudio: TimeInterval? {
+        guard consumerId != nil else { return nil }
+        return Date().timeIntervalSince(lastChunkAt)
+    }
 
     // MARK: - Setup
 
@@ -201,6 +207,7 @@ final class OpenWakeListener {
             return
         }
         converter = AVAudioConverter(from: tapFormat, to: format16k)
+        lastChunkAt = Date()   // grace period: buffers start arriving shortly
         consumerId = AudioHub.shared.addConsumer { [weak self] buffer in
             self?.capture(buffer)
         }

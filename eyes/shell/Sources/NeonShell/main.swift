@@ -267,9 +267,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// because it is invisible: she simply never answers again. Nothing
     /// reports it, so it has to be inferred from silence at the microphone.
     private func checkMicrophone() {
-        guard let oww = owwListener, oww.modelName != nil else { return }
-        let quiet = oww.secondsSinceAudio
-        guard quiet > 6 else { return }
+        guard let oww = owwListener, oww.modelName != nil,
+              let quiet = oww.secondsSinceAudio, quiet > 6 else { return }
         logEvent("error", String(format: "microphone silent for %.0fs — reattaching", quiet))
         NSLog("Neon: wake listener deaf for \(Int(quiet))s; reattaching tap")
         oww.reattach()
@@ -417,7 +416,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func pushTasks(_ tasks: [NeonTask]) {
-        let rows: [[String: Any]] = tasks.map { t in
+        let rows: [[String: Any]] = tasks.filter(\.onScreen).map { t in
             var row: [String: Any] = [
                 "id": t.id, "title": t.title, "status": t.status.rawValue,
             ]
@@ -577,8 +576,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ["engine", "\(providerName) (idle)"],
                 ["state", "wake listener"],
                 ["wake", wakeStatus()],
-                ["mic", owwListener.map {
-                    String(format: "%.1fs since audio", $0.secondsSinceAudio) } ?? "—"],
+                ["mic", owwListener?.secondsSinceAudio.map {
+                    String(format: "%.1fs since audio", $0) } ?? "not attached"],
                 ["here", LocationProvider.shared.status()],
                 ["lifetime", String(format: "$%.3f", UsageStore.shared.total)],
                 ["mac hears", String(wakeHeard.suffix(70))],

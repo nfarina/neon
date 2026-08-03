@@ -185,8 +185,22 @@ Nick"), so the agent can pitch an answer at whoever asked.
 
 Tasks: left edge, vertically centered, mirroring the event log on the right — a
 state dot plus label. Running pulses cyan, done is solid green,
-cancelled/failed go gray. Finished rows linger ~2 minutes (`prune()`) so
-someone walking past sees what just happened.
+cancelled/failed go gray. Finished rows stay on screen ~2 minutes so someone
+walking past sees what just happened.
+
+**Screen lifetime and store lifetime are different things.** The left edge is a
+picture of *now* (`NeonTask.onScreen`), but the store keeps finished work for a
+day, because "what did that chips task say?" is a fair question an hour later
+and `check_task` should still be able to answer it. The first version conflated
+them: `prune()` deleted tasks two minutes after they were announced, taking the
+result with them, *and* required `announced`, so anything started outside a
+voice session (the test harness) was kept forever. Wrong in both directions at
+once.
+
+A task interrupted by a restart is marked failed with `finishedAt` stamped —
+without that stamp it read as infinitely old and was pruned before anyone could
+see it had been interrupted. It is left `announced`, since waking the room to
+report a task killed by a rebuild is noise.
 
 Timer: bottom center, quiet while counting (cyan pill, large tabular clock),
 amber and pulsing when ringing, with the dismissal hint spelled out on screen.
