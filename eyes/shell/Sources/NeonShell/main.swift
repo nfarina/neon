@@ -322,6 +322,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Updater.shared.onNeedsScreen = { [weak self] reason in
             self?.stepAside(for: 120, reason: reason)
         }
+        Updater.shared.log = { [weak self] kind, text in
+            self?.logEvent(kind, text)
+        }
+        // When it is safe for Neon to vanish for a few seconds and come back.
+        // Deep sleep is the load-bearing condition — it means ten minutes with
+        // nobody speaking to her — and the rest are the ways somebody can be
+        // waiting on her without having said anything recently.
+        Updater.shared.isQuiet = { [weak self] in
+            guard let self else { return false }
+            return self.deepAsleep
+                && self.voiceSession == nil
+                && !self.settings.isOpen
+                && !KitchenTimer.shared.isActive
+                && self.pendingAnnouncements.isEmpty
+        }
     }
 
     // ==================================================== deep sleep
@@ -365,6 +380,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func checkIdle() {
         checkMicrophone()
         TaskStore.shared.prune()
+        // A downloaded update waits here for the room to empty. Runs before
+        // the deep-sleep guard below, since deep sleep is precisely the state
+        // it is waiting for.
+        Updater.shared.installIfQuiet()
         // A running timer keeps the panel lit: it is a countdown someone is
         // watching, and an ember-dim clock is useless.
         //

@@ -93,14 +93,50 @@ not, so a broken embed fails at build time rather than at launch in a kitchen.
 
 ## Update behaviour
 
-Automatic checks on, automatic installs **off**. Neon restarting into a new
-build unannounced while somebody is mid-sentence is exactly the wrong behaviour
-for something that lives in a room. She notices an update and waits to be told,
-from the settings panel.
+Checks are always automatic. **Installing is a setting**, off by default
+(Settings → About → "Install updates on her own"), because an install means a
+relaunch, and a relaunch mid-sentence is exactly wrong for something that lives
+in a room.
 
-Sparkle raises its own native windows, which land behind the kiosk — `Updater`
-calls `onNeedsScreen` first so the shell steps aside, the same machinery TCC
-prompts use.
+Switched on, the hard part isn't downloading — Sparkle does that — it is
+choosing the moment. Sparkle's model is "install when the app next quits", and
+Neon never quits: she is an appliance that runs for months. So
+`SPUUpdaterDelegate.updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)`
+returns true to take ownership of the timing, holds the block, and the shell's
+20-second idle sweep fires it when the room is genuinely empty:
+
+- deep asleep (ten minutes with nobody speaking to her — the load-bearing one)
+- no voice session
+- no timer counting down
+- nobody in settings
+- nothing waiting to be announced
+
+She updates herself at 3am and is back before anyone notices. Turning the
+setting off also drops any block already held, so it can't leave a loaded gun.
+
+Sparkle raises its own native windows for a manual check, which land behind the
+kiosk — `Updater` calls `onNeedsScreen` first so the shell steps aside, the same
+machinery TCC prompts use.
+
+**The obvious risk is the one worth saying out loud**: with this on, a bad
+release restarts the kitchen display into a bad build with nobody there. There
+is no rollback. Run a release build locally before publishing it.
+
+## The first Developer ID build resets every permission
+
+TCC keys grants to the code signature, and a release is signed with Developer
+ID where the kitchen build is signed with "Neon Dev". macOS sees a different
+application, so **microphone, speech recognition, camera, location and
+calendars all go back to unasked** the first time a released build runs on a
+machine that had been running a local one.
+
+That is survivable but not silent: she comes up unable to hear until the
+prompts are answered, and the prompts appear behind the kiosk (Ctrl-Opt-Cmd-H
+steps aside; the panel's own Allow button handles calendars). It happens once.
+Every Developer ID build after that is the same identity and keeps its grants.
+
+Worth doing deliberately, standing at the machine, rather than discovering it
+the morning after an unattended update.
 
 ## Building without Sparkle
 

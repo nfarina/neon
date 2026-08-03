@@ -1036,6 +1036,21 @@ function peopleHTML() {
 
 function aboutHTML() {
   const canUpdate = sState.updatesSupported;
+  const auto = canUpdate ? `<div class="srow">
+      <div class="grow">
+        <div class="name">Install updates on her own</div>
+        <div class="sub">
+          For a machine nobody sits at. She downloads updates as they appear and
+          installs one only when the kitchen is empty — deep asleep, no timer
+          running, nobody mid-conversation — so the restart happens at 3am
+          rather than mid-sentence.
+        </div>
+        ${sState.updateWaiting
+          ? `<div class="sub ok">An update is downloaded and waiting for a quiet moment.</div>`
+          : ""}
+      </div>
+      <div class="toggle ${sState.autoUpdate ? "on" : ""}" data-autoupdate="1"></div>
+    </div>` : "";
   return `<div class="sgroup">
     <h2>About</h2>
     <div class="srow">
@@ -1045,6 +1060,7 @@ function aboutHTML() {
       </div>
       <button class="btn" data-act="checkUpdates" ${canUpdate ? "" : "disabled"}>check for updates</button>
     </div>
+    ${auto}
     <div class="srow">
       <div class="grow">
         <div class="name">Quit Neon</div>
@@ -1104,6 +1120,13 @@ sEl.addEventListener("click", e => {
     const on = !toggle.classList.contains("on");
     toggle.classList.toggle("on", on);   // answer the click now, not on the round trip
     sSend("plugin", { id: toggle.dataset.plugin, on: on });
+    return;
+  }
+  const auto = e.target.closest("[data-autoupdate]");
+  if (auto) {
+    const on = !auto.classList.contains("on");
+    auto.classList.toggle("on", on);
+    sSend("autoUpdate", { on: on });
     return;
   }
   const allow = e.target.closest("[data-permission]");

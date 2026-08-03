@@ -116,6 +116,11 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
         case "checkUpdates":
             Updater.shared.checkForUpdates()
 
+        case "autoUpdate":
+            guard let on = body["on"] as? Bool else { return }
+            Updater.shared.installsAutomatically = on
+            push()
+
         case "quit":
             NSApp.terminate(nil)
 
@@ -200,6 +205,8 @@ final class SettingsBridge: NSObject, WKScriptMessageHandler {
             "version": Updater.shortVersion,
             "build": Updater.buildVersion,
             "updatesSupported": Updater.shared.isSupported,
+            "autoUpdate": Updater.shared.installsAutomatically,
+            "updateWaiting": Updater.shared.hasUpdateWaiting,
             "profile": loadProfile(),
         ]
 
