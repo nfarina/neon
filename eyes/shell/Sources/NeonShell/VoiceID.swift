@@ -111,7 +111,9 @@ final class VoiceID {
     /// calling someone by the wrong name is worse than her not knowing.
     /// When the top two are close (the twins, most likely), it says so rather
     /// than picking.
-    func describe(_ samples: [Float]) -> (phrase: String, detail: String)? {
+    /// `phrase` is nil when nobody matches; `detail` always carries the
+    /// numbers, since "no match" is exactly what you want to see in the log.
+    func describe(_ samples: [Float]) -> (phrase: String?, detail: String)? {
         guard !profiles.isEmpty, let vec = embed(samples) else { return nil }
         let match = PersonStore.shared.matchVoice(vec, threshold: Self.threshold)
         return (PersonStore.phrase(match, verb: "sound"), PersonStore.detail(match))

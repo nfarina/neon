@@ -474,7 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             $0.bindMemory(to: Int16.self).map { Float($0) }
         }
         guard let who = VoiceID.shared.describe(samples) else { return nil }
-        lastWho = "\(who.phrase) · \(who.detail)"
+        lastWho = "\(who.phrase ?? "no match") · \(who.detail)"
         logEvent("who", "voice: \(lastWho)")
         return who.phrase
     }

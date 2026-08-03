@@ -231,7 +231,7 @@ final class FaceID {
     // MARK: - Recognition
 
     /// Hedged, like the voice hint: "looks like Alex", never an assertion.
-    func describe(in image: CGImage) -> (phrase: String, detail: String)? {
+    func describe(in image: CGImage) -> (phrase: String?, detail: String)? {
         guard let face = faces(in: image).first else { return nil }
         let match = PersonStore.shared.matchFace(face.embedding, threshold: Self.threshold)
         return (PersonStore.phrase(match, verb: "look"),

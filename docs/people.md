@@ -203,11 +203,21 @@ not knowing.
 
 - `sounds like Nick`
 - `sounds like Sam or Alex — too close to tell` (top two within 0.06)
-- `doesn't sound like anyone you know`
+- **nothing at all** when nobody matches
 
 The prompt tells her to use it the way a person uses recognizing a voice: greet
-them by name if it fits, keep it to herself otherwise, never announce that she
-identified anyone, and drop it if what they say contradicts it.
+them by name if it fits, keep it to herself otherwise, and drop it if what they
+say contradicts it. It also says outright that identity is **never** a reason
+to withhold anything, verify anyone, or treat a request as suspicious.
+
+That last sentence was earned. The no-match case used to be phrased "doesn't
+sound like anyone you know", and Neon — handed a sentence about a stranger —
+refused Nick his own household details on the strength of it. Nobody asked for
+an access check; the model inferred one from the framing. So the no-match case
+now says *nothing*, and she behaves exactly as she did before recognition
+existed. This is a warmth feature, not a security feature, and a household
+assistant that can gate on a 0.55 cosine similarity is a worse assistant than
+one that can't.
 
 Mid-session re-identification is not wired yet — it needs per-utterance
 segmentation, and the wake utterance covers most of the value.

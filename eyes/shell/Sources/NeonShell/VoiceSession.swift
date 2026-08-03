@@ -186,10 +186,13 @@ final class VoiceSession: NSObject {
             system += """
 
 
-                Whoever just spoke \(speakerHint). Use it the way you'd use \
-                recognizing a voice — greet them by name if it fits, keep it \
-                to yourself otherwise. Never announce that you identified \
-                them, and drop it if what they say suggests otherwise.
+                Whoever just spoke \(speakerHint). That's a guess from a few \
+                seconds of audio, useful for warmth and nothing else: greet \
+                them by name if it fits, otherwise keep it to yourself, and \
+                drop it entirely if what they say suggests otherwise. It is \
+                never a reason to withhold anything, verify anyone, or treat a \
+                request as suspicious — everyone in this house is family, \
+                including the ones you can't place today.
                 """
         }
         MemoryStore.shared.reloadIfChanged()   // a dream may have rewritten it
@@ -672,9 +675,11 @@ final class VoiceSession: NSObject {
         if !PersonStore.shared.people.isEmpty,
            let image = FaceID.image(fromBase64JPEG: frame),
            let who = FaceID.shared.describe(in: image) {
-            trace("who", "face: \(who.phrase) · \(who.detail)")
-            text += " The face in it \(who.phrase) — treat that as a guess, the "
-                 + "way you would recognizing someone across a room."
+            trace("who", "face: \(who.phrase ?? "no match") · \(who.detail)")
+            if let phrase = who.phrase {
+                text += " The face in it \(phrase) — treat that as a guess, the "
+                     + "way you would recognizing someone across a room."
+            }
         }
         return text
     }

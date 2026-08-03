@@ -114,8 +114,13 @@ final class PersonStore {
     /// The hedge Neon hears. Never an assertion: this is a guess from a few
     /// seconds of far-field audio or one camera frame, and being confidently
     /// wrong about a name is worse than not knowing.
-    static func phrase(_ match: Match?, verb: String) -> String {
-        guard let match else { return "doesn't \(verb) like anyone you know" }
+    /// Nil when nobody matches — she is told who this probably is, or nothing
+    /// at all. Telling her "this isn't anyone you know" describes a stranger,
+    /// and a model handed that sentence starts behaving as though one is
+    /// standing there: Nick got refused his own household details by a voice
+    /// check nobody asked for.
+    static func phrase(_ match: Match?, verb: String) -> String? {
+        guard let match else { return nil }
         if match.ambiguous, let other = match.runnerUp {
             return "\(verb)s like \(match.name) or \(other) — too close to tell"
         }
