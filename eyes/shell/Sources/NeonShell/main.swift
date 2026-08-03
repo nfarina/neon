@@ -64,13 +64,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Yield the screen while macOS asks about location, and take it back
         // the moment the question is answered.
         LocationProvider.shared.onAwaitingPermission = { [weak self] waiting in
-            if waiting {
-                self?.stepAside(for: 90, reason: "location permission dialog")
-            } else {
-                self?.stepBack()
-            }
+            self?.awaitingPermission(waiting, reason: "location permission dialog")
         }
         LocationProvider.shared.start()
+        // Calendars is asked here, at launch, rather than the first time a task
+        // wants it: by then the kiosk is up and the prompt is unreachable.
+        CalendarBridge.onAwaitingPermission = { [weak self] waiting in
+            self?.awaitingPermission(waiting, reason: "calendar permission dialog")
+        }
+        CalendarBridge.primeAccess()
         idleTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             self?.checkIdle()
         }
@@ -295,10 +297,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func checkIdle() {
         checkMicrophone()
         TaskStore.shared.prune()
-        // Something is cooking — literally. Deep sleep takes the backlight
-        // down to an ember, which is the wrong state for a display that is
-        // counting down to something someone is waiting for.
-        guard TaskStore.shared.active.isEmpty, !KitchenTimer.shared.isActive else { return }
+        // A running timer keeps the panel lit: it is a countdown someone is
+        // watching, and an ember-dim clock is useless.
+        //
+        // A background task does not. Nothing about it is on screen worth
+        // staying bright for — it announces itself when it lands, which wakes
+        // her anyway — and a research task running at 2am should not hold the
+        // kitchen display up all night.
+        guard !KitchenTimer.shared.isActive else { return }
         guard !deepAsleep, voiceSession == nil,
               Date().timeIntervalSince(lastActivity) > deepSleepAfter else { return }
         deepAsleep = true
@@ -329,6 +335,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var steppedAside = false
     private var stepAsideTimer: Timer?
+
+    /// macOS queues TCC prompts one at a time, and on a first run both location
+    /// and calendars are unanswered. Taking the screen back the moment the
+    /// first one is dealt with would drop the kiosk straight on top of the
+    /// second, which is the exact failure this machinery exists to avoid — so
+    /// count the outstanding ones and only step back at zero.
+    private var permissionWaits = 0
+
+    private func awaitingPermission(_ waiting: Bool, reason: String) {
+        if waiting {
+            permissionWaits += 1
+            stepAside(for: 90, reason: reason)
+        } else {
+            permissionWaits = max(0, permissionWaits - 1)
+            if permissionWaits == 0 { stepBack() }
+        }
+    }
 
     func stepAside(for seconds: TimeInterval, reason: String) {
         stepAsideTimer?.invalidate()
@@ -784,6 +807,19 @@ if let spec = ProcessInfo.processInfo.environment["NEON_VOICEID_ENROL"] {
 if let dir = ProcessInfo.processInfo.environment["NEON_VOICEID_TEST"] {
     VoiceID.voiceMatrix(dir: dir)
     exit(0)
+}
+
+// The family's real schedule is in iCloud, not the Google calendar the task
+// agent can reach, so tasks read it by re-running this binary:
+// NEON_CALENDAR_DAYS=7 prints the next week as JSON, NEON_CALENDAR_LIST=1
+// prints just the calendar names. Run from a task, the process tree is
+// Neon -> zsh -> claude -> here, so the Calendars grant already belongs to
+// Neon.app and no second prompt appears.
+if let days = ProcessInfo.processInfo.environment["NEON_CALENDAR_DAYS"] {
+    CalendarBridge.dump(days: Int(days) ?? 7)
+}
+if ProcessInfo.processInfo.environment["NEON_CALENDAR_LIST"] == "1" {
+    CalendarBridge.listCalendars()
 }
 
 let app = NSApplication.shared

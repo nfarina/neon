@@ -45,6 +45,14 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
        authorization prompt un-raised. Ship both. -->
   <key>NSLocationUsageDescription</key>
   <string>Neon uses your location for local answers like weather and sunset times.</string>
+  <!-- Reading the household's iCloud calendars (CalendarBridge.swift). Both
+       keys for the same reason as location: 14+ wants the FullAccess one, the
+       plain key is what older releases look for. Read-only — there is no
+       write path in the code. -->
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Neon reads the family calendars to answer questions about the day.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Neon reads the family calendars to answer questions about the day.</string>
 </dict>
 </plist>
 EOF

@@ -161,10 +161,15 @@ being announced twice.
 
 ## Deep sleep
 
-A running task suppresses deep sleep entirely (`checkIdle` returns early while
-`TaskStore.active` is non-empty). Deep sleep takes the backlight to an ember,
-which is the wrong state for a display counting down to something somebody is
-waiting for.
+A running **timer** suppresses deep sleep: it is a countdown someone is
+watching, and an ember-dim clock is useless.
+
+A running **task** does not, though it did briefly. Nothing about a background
+task is on screen worth staying bright for, it announces itself when it lands,
+and a research task started at 2am should not hold the kitchen display up all
+night. (The eyes' own dozing was never affected by either — verified with
+`swift eyes/shot.swift out.png --after 14 --js '…tasks([…running…])'`, which
+reaches `state=sleeping` with a task on screen.)
 
 ## Tool surface
 

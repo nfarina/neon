@@ -19,6 +19,10 @@ let args = CommandLine.arguments
 let outPath = args.count > 1 ? args[1] : "eyes-contact-sheet.png"
 // `--js "<source>"` snapshots one arbitrary UI state instead of the emote
 // sheet: anything drivable through window.neon (task list, overlays, states).
+// `--after N` snapshots N seconds later — for behaviour that only shows up
+// over time, like whether she still dozes off with a task running.
+let afterIndex = args.firstIndex(of: "--after")
+let afterDelay = afterIndex.flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }
 let jsIndex = args.firstIndex(of: "--js")
 let customJS = jsIndex.flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
 let names = args.count > 2 && customJS == nil ? Array(args[2...])
@@ -93,7 +97,7 @@ final class Harness: NSObject, WKNavigationDelegate {
             if let value = try? await web.evaluateJavaScript(customJS), !(value is NSNull) {
                 print("js → \(value)")
             }
-            await sleep(2.6)
+            await sleep(afterDelay ?? 2.6)
             if let f = try? await web.evaluateJavaScript("window.__frames + ' frames, state=' + window.neon.state") {
                 print("render: \(f)")
             }
