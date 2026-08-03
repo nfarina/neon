@@ -113,7 +113,7 @@ file they belong to.
 | [docs/voice.md](docs/voice.md) | Realtime speech-to-speech engines, session lifecycle, tools, costs, memory, personality |
 | [docs/wake.md](docs/wake.md) | Waking her: openWakeWord, Apple's recognizer, thresholds, wake-utterance capture |
 | [docs/eyes.md](docs/eyes.md) | Renderer and animation channels, emotes, shortcuts, overlays, kiosk, build scripts |
-| [docs/voices.md](docs/voices.md) | Telling the family apart by voice: embeddings, enrolment, thresholds |
+| [docs/people.md](docs/people.md) | Telling the family apart by voice and face: embeddings, enrolment, thresholds |
 | [docs/memory.md](docs/memory.md) | What she remembers across conversations, and the nightly dreaming pass |
 | [docs/tasks.md](docs/tasks.md) | The kitchen timer, background tasks, and how each reports back |
 | [docs/machine.md](docs/machine.md) | The machine, its tooling, and the permissions that keep breaking |

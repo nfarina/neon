@@ -1,7 +1,60 @@
-# Voices
+# People
 
-Who is talking. `VoiceID.swift` (speaker embeddings) + `Fbank.swift` (the
-features they eat).
+Who Neon is talking to. `PersonStore.swift` holds the identities;
+`VoiceID.swift` + `Fbank.swift` recognise voices; `FaceID.swift` recognises
+faces; `Enrolment.swift` is the one sitting that captures both.
+
+## Two signals, one question
+
+Voice and face answer the same question and fail in different conditions:
+voice works in the dark and across the room, faces work when someone is silent
+or when two voices are too alike. Identical twins are exactly why the second
+signal exists — Sam and Alex may be hard to separate by voice and easy by
+face.
+
+One record per person in `~/.config/neon/people.json` (migrated automatically
+from the older `voices.json`), outside the repo. **Enrolment images are never
+written to disk**: embeddings are computed from frames in memory and the frames
+are dropped. There is no reason to keep a library of photographs of somebody's
+children.
+
+## Faces
+
+Apple's Vision has **no public face-identity API** — `VNGenerateFaceprintRequest`
+is private, and `VNGenerateImageFeaturePrintRequest` is a general image
+descriptor keyed on lighting and background as much as identity, which is
+precisely wrong for twins. So:
+
+- **Vision** does detection, landmarks and a capture-quality score (free,
+  on-device, very good).
+- **ArcFace** (`buffalo_s`, 13 MB, `~/.config/neon/faceid/`) does the 512-dim
+  embedding — the same ONNX pattern as the wake word and voice.
+
+Alignment is the part that silently ruins everything: ArcFace embeds a 112×112
+crop warped onto a canonical 5-point layout (eyes, nose, mouth corners), and an
+unaligned crop still yields 512 confident-looking numbers that match nothing.
+The warp is the least-squares *similarity* transform, which has a closed form
+in complex arithmetic — `a = Σ(conj(xᵢ)·yᵢ)/Σ|xᵢ|²` over centred points — so no
+SVD is needed and a face can never be mirrored.
+
+Vision reports landmarks normalised to the face box in a bottom-left origin;
+both have to be undone to get image pixels.
+
+### Checking it without enrolling anyone
+
+```sh
+NEON_FACEID_TEST=1 eyes/Neon.app/Contents/MacOS/Neon
+```
+
+Six seconds of camera, then frame-to-frame similarity for the *same* face.
+That is the real test of the chain: detection, landmarks, alignment and
+embedding all have to be right for one face to land in the same place twice.
+Expect a mean above ~0.75; scattered values mean alignment is off, not that the
+model is bad.
+
+## Voices
+
+`VoiceID.swift` (speaker embeddings) + `Fbank.swift` (the features they eat).
 
 ## How it works
 
@@ -63,18 +116,31 @@ to expect from Sam and Alex.
 
 ## Enrolling
 
-From the live microphone, which is what you want — an embedding built from a
-phone held to the mouth will not match far-field, echo-cancelled kitchen audio:
+One sitting per person, both modalities:
 
 ```sh
-NEON_VOICEID_RECORD=Sam eyes/Neon.app/Contents/MacOS/Neon
+NEON_ENROL=Sam eyes/Neon.app/Contents/MacOS/Neon
 ```
 
-12 seconds of natural speech, standing where that person normally stands. It
-splits the recording into thirds and averages three embeddings, then prints
-similarity against everyone already enrolled — watch that number for the twins.
+Eight seconds looking at the camera (move your head a little — a few angles
+beat one perfect shot; the best six frames by Vision's quality score are kept),
+then twelve seconds of natural speech **standing where that person normally
+stands**. An embedding built from a phone held to the mouth will not match
+far-field, echo-cancelled kitchen audio.
 
-From files (16 kHz mono WAV):
+It finishes by printing similarity against everyone already enrolled, per
+modality:
+
+```
+similarity to the others — lower is better:
+  who         voice    face
+  Alex       +0.812   +0.204
+```
+
+That table is the point of doing both together: it tells you whether a pair
+separates by voice, by face, or only by both at once.
+
+From files (16 kHz mono WAV), for the offline harness:
 
 ```sh
 NEON_VOICEID_ENROL="Nick=a.wav,b.wav" eyes/Neon.app/Contents/MacOS/Neon

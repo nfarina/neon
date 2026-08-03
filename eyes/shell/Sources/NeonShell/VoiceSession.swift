@@ -598,9 +598,19 @@ final class VoiceSession: NSObject {
             NSLog("Neon voice: capture_image — sending frame (\(frame.count / 1024) KB)")
             trace("tool", "capture_image → frame sent (\(frame.count / 1024) KB)")
             sendJSON(msg)
+            // Who's in shot, decided locally. Same hedge as the voice hint,
+            // and a second independent signal about the same question: voice
+            // works in the dark, faces work when someone is silent.
+            var note = "Image captured — it's arriving as a video frame now."
+            if !PersonStore.shared.people.isEmpty,
+               let image = FaceID.image(fromBase64JPEG: frame),
+               let who = FaceID.shared.describe(in: image) {
+                trace("tool", "face: \(who)")
+                note += " The face in it \(who) — treat that as a guess, "
+                     + "the same way you would recognising someone across a room."
+            }
             if let resp = engine.toolResponseMessage(
-                id: id, name: captureToolName,
-                result: "Image captured — it's arriving as a video frame now.") {
+                id: id, name: captureToolName, result: note) {
                 sendJSON(resp)
             }
         } else if let resp = engine.toolResponseMessage(

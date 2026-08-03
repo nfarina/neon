@@ -671,22 +671,34 @@ if let spec = ProcessInfo.processInfo.environment["NEON_TASK_TEST"] {
     exit(0)
 }
 
-// Voice enrolment from the live mic: NEON_VOICEID_RECORD=Sam
-if let name = ProcessInfo.processInfo.environment["NEON_VOICEID_RECORD"] {
-    VoiceID.recordAndEnrol(name: name)
+// Pipeline check with no enrolment: NEON_FACEID_TEST=1
+if ProcessInfo.processInfo.environment["NEON_FACEID_TEST"] != nil {
+    Enrolment.faceCheck()
     exit(0)
 }
 
-// Voice enrolment from files: NEON_VOICEID_ENROL="Nick=a.wav,b.wav"
+// One sitting per person, both modalities: NEON_ENROL=Sam
+if let name = ProcessInfo.processInfo.environment["NEON_ENROL"] {
+    Enrolment.run(name: name)
+    exit(0)
+}
+
+// Voice enrolment from files, for the offline harness:
+// NEON_VOICEID_ENROL="Nick=a.wav,b.wav"
 if let spec = ProcessInfo.processInfo.environment["NEON_VOICEID_ENROL"] {
     let parts = spec.split(separator: "=", maxSplits: 1)
     guard parts.count == 2 else { print("format: Name=clip1.wav,clip2.wav"); exit(1) }
     let name = String(parts[0])
-    let clips = parts[1].split(separator: ",").compactMap { WavFile.samples(at: String($0)) }
-    guard let profile = VoiceID.shared.enrol(name: name, clips: clips) else {
-        print("enrolment failed — unreadable clips, or none long enough"); exit(1)
-    }
-    print("enrolled \(profile.name) from \(profile.clips) clip(s)")
+    let vectors = parts[1].split(separator: ",")
+        .compactMap { WavFile.samples(at: String($0)) }
+        .compactMap { VoiceID.shared.embed($0) }
+    guard !vectors.isEmpty else { print("no usable clips"); exit(1) }
+    var mean = [Float](repeating: 0, count: vectors[0].count)
+    for v in vectors { for i in v.indices { mean[i] += v[i] } }
+    let norm = (mean.reduce(0) { $0 + $1 * $1 }).squareRoot()
+    if norm > 0 { for i in mean.indices { mean[i] /= norm } }
+    PersonStore.shared.setVoice(mean, for: name)
+    print("enrolled \(name) from \(vectors.count) clip(s)")
     exit(0)
 }
 
