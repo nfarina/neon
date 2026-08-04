@@ -34,6 +34,24 @@ updates. That is the truth, and better than a Check for Updates button that can
 only fail — which is also what anyone building from a fresh clone gets, and
 should.
 
+## Which machine can cut one
+
+**The MacBook Air, not the kitchen Mac.** A release needs three things that
+live in one login keychain and are deliberately not copied around: the Sparkle
+EdDSA private key, the Developer ID Application certificate, and the
+`neon-notary` credential profile. The kitchen Mac has none of them, and
+shouldn't — it is bolted to a wall in a room the whole family walks through.
+
+So the sequence is: do the work anywhere, push, then pull and run
+`tools/release.sh` on the Air. Check before starting, rather than halfway
+through a build:
+
+```sh
+security find-identity -v -p codesigning | grep "Developer ID Application"
+security find-generic-password -s com.nickfarina.neon >/dev/null && echo "sparkle key ok"
+xcrun notarytool history --keychain-profile neon-notary >/dev/null && echo "notary ok"
+```
+
 ## Cutting one
 
 ```sh

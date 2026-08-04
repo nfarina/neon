@@ -118,9 +118,14 @@ EOF
 # no setup, so prefer that over falling back to ad-hoc.
 IDENTITIES=$(security find-identity -v -p codesigning)
 if (( RELEASE )); then
-  SIGN_ID="${NEON_SIGNING_IDENTITY:-$(grep -o '"Developer ID Application: [^"]*"' <<< "$IDENTITIES" | head -1 | tr -d '"')}"
+  # `|| true` because pipefail otherwise makes the *absence* of a certificate
+  # kill the script right here, at the assignment, with no output at all — the
+  # helpful error two lines down was unreachable on any machine that didn't
+  # already have the cert, which is exactly the machine that needed it.
+  SIGN_ID="${NEON_SIGNING_IDENTITY:-$(grep -o '"Developer ID Application: [^"]*"' <<< "$IDENTITIES" | head -1 | tr -d '"' || true)}"
   if [[ -z "$SIGN_ID" ]]; then
-    echo "error: --release needs a Developer ID Application certificate" >&2
+    echo "error: --release needs a Developer ID Application certificate, and this machine has none." >&2
+    echo "       Releases are cut on the machine holding the signing key — see docs/release.md." >&2
     exit 1
   fi
   # Hardened runtime is required for notarization, and with it the resource
