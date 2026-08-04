@@ -3,6 +3,28 @@
     <channel>
         <title>Neon</title>
         <item>
+            <title>0.4</title>
+            <pubDate>Tue, 04 Aug 2026 16:47:49 -0700</pubDate>
+            <link>https://nfarina.github.io/neon</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/nfarina/neon/releases/tag/v0.4</sparkle:fullReleaseNotesLink>
+            <sparkle:version>93</sparkle:version>
+            <sparkle:shortVersionString>0.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[# Neon 0.4
+
+**She dozes off again.** Since 0.3 she would stay awake indefinitely after a
+conversation instead of drifting off after a few seconds of quiet.
+
+The idle timer had a rule against falling asleep mid-thought — don't doze if
+the server has said anything recently — and Gemini turns out to send a
+keepalive about twice a second for as long as the microphone is streaming. By
+that measure it had *always* just said something. The timer now waits on real
+work (speech, transcription, reasoning, tool calls) rather than on traffic.
+]]></description>
+            <enclosure url="https://github.com/nfarina/neon/releases/download/v0.4/Neon-0.4-macos.zip" length="14256047" type="application/octet-stream" sparkle:edSignature="kAeQUbSSebkP4QsakZ/pCSwT18L12fOmIoWG2g8ZIZH1GHm2m2Ys3AgNHewU7smrDuXFljZ1Q0dI0TGgn8O3Bg=="/>
+        </item>
+        <item>
             <title>0.3</title>
             <pubDate>Mon, 03 Aug 2026 11:07:25 -0700</pubDate>
             <link>https://nfarina.github.io/neon</link>
