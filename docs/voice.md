@@ -45,11 +45,14 @@ Wake-word detection is [wake.md](wake.md); the renderer is [eyes.md](eyes.md).
   mic audio up at 16 kHz (AVAudioConverter from the tap format), plays 24 kHz
   replies through AVAudioPlayerNode, and enables input voice processing for
   echo cancellation. Server VAD handles turn-taking and barge-in
-  (`interrupted` flushes the playback queue). On session open the wake
-  listener releases the microphone (`WakeWordListener.stop()`); on close
-  (15 s idle, S key, or socket loss) it takes it back. The eyes hold awake
-  during the session (`neon.hold`) and pulse with output amplitude
-  (`neon.speaking`). On setup the session sends a synthetic turn so Neon
+  (`interrupted` flushes the playback queue). The wake listener keeps running
+  through the session rather than releasing the microphone — AudioHub fans
+  the shared tap out to both, so there is no recognition-restart dead zone at
+  session end and she hears her name any time, including mid-doze (this
+  doubles as the idle/doze logic's distance-tolerant "still talking" signal,
+  see below). The eyes hold awake during the session (`neon.hold`) and pulse
+  with output amplitude (`neon.speaking`). On setup the session sends a
+  synthetic turn so Neon
   greets immediately after the wake phrase.
 - The full loop worked end to end on July 31, 2026: wake phrase → eyes wake →
   Gemini session → spoken multi-turn conversation → idle → sleep.
@@ -87,13 +90,38 @@ Wake-word detection is [wake.md](wake.md); the renderer is [eyes.md](eyes.md).
   `thinkingConfig.thinkingLevel: HIGH` (2.5 uses a budget schema instead, so
   the gemini25 engine sends none), and Google Search grounding is on via a
   `googleSearch` tools entry — verified returning genuinely current
-  headlines from both models. Idle timeout is 7 s of post-reply silence.
-- Idle doesn't hang up abruptly: after the 7 s the session enters a doze
-  grace — the eyes run the dozing-off animation while the WebSocket stays
-  open, and mic voice energy during it snaps her back awake with the
+  headlines from both models. Idle timeout is 5 s of post-reply silence
+  (`VoiceSession.idleSeconds`; was 7 s until 2026-08-03 — Nick found she
+  wasn't dozing off after a chat, she just kept listening, and 7 s read as
+  "never" in the kitchen).
+- Idle doesn't hang up abruptly: after the idle timeout the session enters a
+  doze grace — the eyes run the dozing-off animation while the WebSocket
+  stays open, and mic voice energy during it snaps her back awake with the
   conversation intact (`onDoze`). The session actually closes only when the
   doze completes (~5 s). So the contract is: you can keep talking to her
-  until her eyes are fully shut.
+  until her eyes are fully shut. That doze-animation time is added listening
+  time on top of the idle threshold, which Nick considers acceptable — the
+  5 s is how long the room has to be quiet before she *starts* dozing, not
+  the total time before the socket closes.
+- **Known false-negative risk in the idle check**: the "is someone still
+  talking" guard (`Date().timeIntervalSince(lastVoiceAt) < 1.5`) is fed by
+  two sources — mic RMS during the session, and *every* partial transcript
+  from the always-on wake listener (`noteVoiceActivity()`, added in
+  `4151529` to catch quiet/distant speakers who fall under the RMS gate).
+  The wake listener transcribes all speech near the mic, not just speech
+  directed at Neon, and it never stops running during a session. In a
+  kitchen with ordinary household chatter after the "real" conversation with
+  Neon has ended, this can keep re-arming the idle window indefinitely —
+  mechanically identical to what Nick described as her "just staying awake."
+  Nothing here is a broken timer (it fires correctly on genuine silence);
+  it's this gate being unable to distinguish "still talking to Neon" from
+  "talking near Neon." Not touched by the 2026-08-03 threshold change since
+  reworking it risks reintroducing the mid-conversation dozing bug `4151529`
+  fixed, and it needs kitchen testing, not guessing. If shortening the
+  threshold to 5 s doesn't fix the real-world symptom, look here next —
+  candidates: scope `noteVoiceActivity()` to only the pre-wake/name-detection
+  window, or decay its influence over the course of a long idle stretch
+  instead of treating every partial as a full reset.
 - Thinking is visible in the stream: with `includeThoughts: true`, thought-
   summary parts (`thought: true`) arrive during the pre-reply pause
   (validated by `voice/gemini-thinking-test.mjs` — ~2.5 s of thoughts before
@@ -125,7 +153,7 @@ Wake-word detection is [wake.md](wake.md); the renderer is [eyes.md](eyes.md).
   which is reserved for idle-silence closes. The system prompt pairs every
   goodbye with the tool call — a bare "say goodnight then sleep" instruction
   was not enough for Gemini to call it, but a natural user goodbye is.
-- Idle timeout semantics: the 15 s clock is *silence after the assistant
+- Idle timeout semantics: the clock is *silence after the assistant
   finished speaking*, not after data arrived — the API delivers reply audio
   much faster than realtime, so the timer is bumped when the playback queue
   drains and never fires while audio is still playing. (Before this fix a
@@ -204,7 +232,7 @@ Wake-word detection is [wake.md](wake.md); the renderer is [eyes.md](eyes.md).
   with?", no offering further assistance, no recapping the answer just given,
   and no questions asked merely to keep the turn alive. The goal is talking
   like a person, and a person is allowed to finish. This also matters
-  mechanically — every trailing offer restarts the 7 s idle clock and drags
+  mechanically — every trailing offer restarts the idle clock and drags
   out a conversation that was over. The bare-name wake greeting follows the
   same rule ("say hi in a word or two and leave it there") rather than the
   old "ask what he needs".

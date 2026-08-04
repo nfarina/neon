@@ -69,7 +69,12 @@ final class VoiceSession: NSObject {
     private static let greeting =
         ProcessInfo.processInfo.environment["NEON_GREETING"]
         ?? "(Nick just said the wake phrase, with nothing after it.) Say hi in a word or two and leave it there."
-    private static let idleSeconds: TimeInterval = 7
+    // Nick, 2026-08-03: she wasn't dozing off after a chat — she just kept
+    // listening. 7s felt like forever in practice, so the idle threshold
+    // (silence before the doze animation *starts*) drops to 5s. The doze
+    // animation itself still takes a few seconds on top of that, which is
+    // fine — that's listening time he's OK with, unlike open-ended silence.
+    private static let idleSeconds: TimeInterval = 5
 
     let engine: VoiceEngine
     private var ws: URLSessionWebSocketTask?

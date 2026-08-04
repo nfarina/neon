@@ -167,7 +167,7 @@ completion that is an **event** (a timer) rings; completion that is an
 ## The announce channel
 
 The hard part is not running work, it's that Neon is *asleep* when the work
-finishes — she sleeps after 7 s of silence. `AppDelegate.announce(_:)` handles
+finishes — she sleeps after 5 s of silence. `AppDelegate.announce(_:)` handles
 three cases:
 
 - **Session live** → `VoiceSession.inject(note)` sends the completion as a user

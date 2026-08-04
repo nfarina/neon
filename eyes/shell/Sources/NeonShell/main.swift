@@ -525,7 +525,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // ==================================================== announce channel
     // A task finished and Neon has to say so. She is usually asleep when that
-    // happens — she sleeps after 7 s of silence — so this is the piece that
+    // happens — she sleeps after 5 s of silence — so this is the piece that
     // decides *how* she gets to speak, not just that she should.
     //
     // Nick's call, 2026-08-02: anything may wake the room, deep sleep
