@@ -58,6 +58,11 @@ xcrun notarytool history --keychain-profile neon-notary >/dev/null && echo "nota
 tools/release.sh 0.3 [--notes notes.md]
 ```
 
+Release notes live in `docs/notes/<version>.md`, written with the release they
+describe rather than at the moment of shipping — they end up in the GitHub
+release and inside Sparkle's update window, so they are for whoever is standing
+at the machine, not for whoever wrote the commits.
+
 Stamps `eyes/VERSION`, builds with `--release`, notarizes, staples, tags,
 creates the GitHub release with the zip attached, regenerates
 `docs/appcast.xml` with a signature, and pushes. Each step is a separate
