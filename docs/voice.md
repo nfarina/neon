@@ -130,6 +130,16 @@ Wake-word detection is [wake.md](wake.md); the renderer is [eyes.md](eyes.md).
   much faster than realtime, so the timer is bumped when the playback queue
   drains and never fires while audio is still playing. (Before this fix a
   long answer could hit the idle close mid-playback.)
+- **A frame from the server is not the server talking.** The idle timer also
+  refuses to fire while the model is mid-answer, and the first version of that
+  guard asked "has anything arrived in the last 3 s?" — which is never false.
+  Gemini emits a `sessionResumptionUpdate` roughly twice a second for as long
+  as we stream mic audio (measured by `voice/gemini-idle-chatter-test.mjs`: 86
+  messages over 45 s of silence, longest gap 1.02 s), so she stopped dozing at
+  all. The guard now counts only events that mean she is working — audio,
+  transcription, thoughts, tool calls, interruption — via
+  `VoiceEvent.isServerWorking`; `ready` and `usage` don't count, and anything
+  the engine doesn't parse can't count by construction.
 - Known metering gaps: sessions closed by `go_to_sleep` can miss the final
   `usageMetadata` (logged cost reads low); Gemini's output transcription
   sometimes leaks the literal function-call text (e.g. `do_call:go_to_sleep`)

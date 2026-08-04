@@ -374,8 +374,11 @@ final class VoiceSession: NSObject {
     }
 
     private func handleMessage(_ msg: [String: Any]) {
-        lastServerAt = Date()
-        for event in engine.parse(msg) {
+        let events = engine.parse(msg)
+        // Keepalive-ish traffic (session resumption handles, usage metadata)
+        // must not read as "she is still talking" — see isServerWorking.
+        if events.contains(where: \.isServerWorking) { lastServerAt = Date() }
+        for event in events {
             switch event {
             case .ready:
                 NSLog("Neon voice: session ready")
@@ -711,11 +714,15 @@ final class VoiceSession: NSObject {
                 guard let self else { return }
                 // Never time out while a reply is still playing, while someone
                 // in the room is mid-sentence, while she is reasoning, or while
-                // the server is still saying anything at all. Nick caught her
+                // the server is still working on an answer. Nick caught her
                 // dozing off mid-thought: thought parts reset this clock, but
                 // MEDIUM thinking can leave a gap longer than the timeout
                 // between them, and silence from the model is not silence from
                 // the room.
+                //
+                // "Working" is deliberately narrower than "sent us a frame":
+                // Gemini's session-resumption keepalives arrive twice a second
+                // forever, and counting those kept her awake indefinitely.
                 if self.pendingPlaybacks > 0
                     || Date().timeIntervalSince(self.lastVoiceAt) < 1.5
                     || self.thinkingActive

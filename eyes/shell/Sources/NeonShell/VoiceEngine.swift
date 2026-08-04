@@ -23,6 +23,20 @@ enum VoiceEvent {
     case usage(VoiceUsage, cumulative: Bool)  // cumulative: replaces prior totals
     case toolCall(name: String, id: String?, args: [String: Any])
     case thinking                             // a thought part arrived; model is reasoning
+
+    /// Is this the server *working on a reply*, as opposed to bookkeeping?
+    ///
+    /// The idle timer uses this to tell "she's mid-thought, wait" apart from
+    /// "the socket is merely alive". Gemini sends a sessionResumptionUpdate
+    /// about twice a second for as long as we stream mic audio, so treating
+    /// every inbound frame as activity means the server is never quiet
+    /// (measured: 86 messages, longest gap 1.02s — voice/gemini-idle-chatter-test.mjs).
+    var isServerWorking: Bool {
+        switch self {
+        case .audio, .inputText, .outputText, .thinking, .toolCall, .interrupted: true
+        case .ready, .usage: false
+        }
+    }
 }
 
 // Core tools — Neon herself, not features. Ending the conversation, looking
