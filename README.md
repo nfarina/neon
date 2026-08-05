@@ -1,3 +1,5 @@
+<img width="500" height="375" alt="Neon" src="https://github.com/user-attachments/assets/1ffb5cea-f863-4fdc-904c-7788ea350bc1" />
+
 # Neon
 
 An ambient voice assistant that lives on a MacBook in a kitchen.
