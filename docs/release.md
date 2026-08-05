@@ -48,7 +48,11 @@ through a build:
 
 ```sh
 security find-identity -v -p codesigning | grep "Developer ID Application"
-security find-generic-password -s com.nickfarina.neon >/dev/null && echo "sparkle key ok"
+# -a, not -s: Sparkle files the key under its own service
+# ("https://sparkle-project.org") with the account as the name. Asking by
+# service reports the key missing on a machine that has it, which is a
+# frightening thing to read about a key whose loss orphans every install.
+security find-generic-password -a com.nickfarina.neon >/dev/null && echo "sparkle key ok"
 xcrun notarytool history --keychain-profile neon-notary >/dev/null && echo "notary ok"
 ```
 
