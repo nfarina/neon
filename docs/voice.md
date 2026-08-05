@@ -168,6 +168,42 @@ Wake-word detection is [wake.md](wake.md); the renderer is [eyes.md](eyes.md).
   transcription, thoughts, tool calls, interruption — via
   `VoiceEvent.isServerWorking`; `ready` and `usage` don't count, and anything
   the engine doesn't parse can't count by construction.
+- **The abandoned turn** (2026-08-05). Nick: "the wake word wakes her up, she
+  stays awake while I'm speaking, then just dozes off without responding." It
+  is not deafness, and it is not ours: Gemini Live intermittently accepts a
+  turn, **transcribes the room correctly**, and then generates nothing at all
+  — no audio, no error, no `turnComplete`, ever. The turn simply hangs.
+  Reproduced with no Neon code in the loop (a standalone `ws` client against
+  the same endpoint): 3 dead turns in ~31 attempts that morning, on both text
+  and audio turns, worse early and largely cleared within the hour. Both
+  machines, so nothing local. The tell in a session log is `heard:` followed by
+  silence and `in N out 0 tokens`.
+
+  Neon made it invisible, three ways at once: `parse()` returned no events so
+  nothing was logged, the frame didn't count as work (`isServerWorking`, above)
+  so the idle clock kept running, and the idle path then closed the socket — she
+  hung up on a question she had heard and understood. Now:
+  - `noteUnrecognisedFrame` logs any frame the engine didn't understand, once
+    per shape per session. Two shapes are suppressed as ordinary traffic:
+    `sessionResumptionUpdate`, and a **bare empty `serverContent`** — which
+    turns out to appear in perfectly healthy sessions, so it is a turn
+    boundary and not the fault signal. The fault is the silence, not a frame.
+  - A watchdog arms whenever the model owes an answer (the opening turn, or
+    any `inputText`) and disarms on the first sign of work. When it fires it
+    replays the model's own transcript of the question as a user turn — it
+    heard correctly, it just never answered — and if that is ignored too it
+    closes with reason `model silent`, so the next wake starts on a fresh
+    socket rather than leaving her sat there looking awake.
+  - While a turn is owed the doze grace period **does not close the session**.
+    That matters more than it sounds: ordinary first-speech latency is
+    **4.4–8.3 s** from setup (five sessions, measured — it feels like two),
+    against a doze at 5 s and a close at ~10.2 s, so the old path could cut off
+    replies that were merely late. Measuring this also killed the first choice
+    of a 6 s watchdog, which would have retried most *healthy* turns and had
+    her talk over herself — worse than the fault it fixes. Ten seconds clears
+    the slowest measured turn with margin; the retry then gets its own ten,
+    and `NEON_DEAD_TURN_SECS` forces it short to see any of this fire on
+    demand, since the fault itself can't be provoked.
 - Known metering gaps: sessions closed by `go_to_sleep` can miss the final
   `usageMetadata` (logged cost reads low); Gemini's output transcription
   sometimes leaks the literal function-call text (e.g. `do_call:go_to_sleep`)

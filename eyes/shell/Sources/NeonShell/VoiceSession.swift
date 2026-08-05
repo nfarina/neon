@@ -97,6 +97,20 @@ final class VoiceSession: NSObject {
     private var lastServerAt = Date.distantPast
     /// Notes that arrived before setup finished.
     private var pendingNotes: [String] = []
+    // A turn the model took and then abandoned. Gemini Live intermittently
+    // transcribes the room, sends a bare `serverContent: {}`, and generates
+    // nothing at all — no audio, no error, no turnComplete, ever. Measured at
+    // roughly one turn in ten on 2026-08-05 (both machines, and reproduced
+    // with no Neon code in the loop at all — see docs/voice.md). Left alone it
+    // is indistinguishable from deafness: she sits there, dozes, and closes
+    // without a word, having heard every syllable.
+    private var turnWatchdog: Timer?
+    /// What the room said in the turn the model owes an answer to.
+    private var pendingTurnText = ""
+    private var retriedTurn = false
+    /// Frame shapes already reported this session, so an unrecognised frame is
+    /// logged once rather than twice a second.
+    private var loggedFrameShapes = Set<String>()
     // Last time the mic carried voice-level energy. Input transcription
     // arrives in a clump when the model responds, not while Nick talks, so
     // this is the only live signal that he's mid-sentence. (Echo-cancelled
@@ -253,6 +267,7 @@ final class VoiceSession: NSObject {
         idleTimer?.invalidate()
         sleepTimer?.invalidate()
         dozeTimer?.invalidate()
+        turnWatchdog?.invalidate()
         if thinkingActive { thinkingActive = false; onThinking(false) }
         camera?.stop()
         camera = nil
@@ -383,6 +398,7 @@ final class VoiceSession: NSObject {
         // Keepalive-ish traffic (session resumption handles, usage metadata)
         // must not read as "she is still talking" — see isServerWorking.
         if events.contains(where: \.isServerWorking) { lastServerAt = Date() }
+        if events.isEmpty { noteUnrecognisedFrame(msg) }
         for event in events {
             switch event {
             case .ready:
@@ -413,15 +429,22 @@ final class VoiceSession: NSObject {
                     }
                 } else {
                     let opening = firstUtterance ?? Self.greeting
+                    pendingTurnText = opening
                     for m in engine.readyMessages(greeting: opening) { sendJSON(m) }
                 }
+                // The opening turn can be abandoned like any other — that is
+                // the failure that looks worst, because she wakes, says
+                // nothing, and dozes without ever having been asked anything.
+                armTurnWatchdog()
                 startAudio()
             case .audio(let data):
                 lastAudioAt = Date()
+                answerStarted()
                 if thinkingActive { thinkingActive = false; onThinking(false) }
                 enqueuePlayback(data)
                 bumpIdle()
             case .thinking:
+                answerStarted()
                 if !thinkingActive {
                     NSLog("Neon voice: thinking…")
                     trace("think", "thinking…")
@@ -434,9 +457,14 @@ final class VoiceSession: NSObject {
                 heard += heard.isEmpty || t.hasPrefix(" ") ? t : " \(t)"
                 record("Nick", t)
                 trace("you", t)
+                // She has been given words to answer. From here the model owes
+                // a turn, and the watchdog holds it to that.
+                pendingTurnText += pendingTurnText.isEmpty || t.hasPrefix(" ") ? t : " \(t)"
+                armTurnWatchdog()
                 bumpIdle()
             case .outputText(let t):
                 NSLog("Neon voice: saying: \(t)")
+                answerStarted()
                 // Gemini live sometimes verbalizes the tool call into the
                 // audio channel (observed: "do_call:go_to_sleep{}") instead
                 // of emitting a real toolCall. Treat the leak as the call.
@@ -450,6 +478,7 @@ final class VoiceSession: NSObject {
                 }
             case .toolCall(let name, let id, let args):
                 NSLog("Neon voice: tool call: \(name) \(args)")
+                answerStarted()
                 if name == sleepToolName {
                     trace("tool", "\(name)()")
                     requestSleep()
@@ -709,6 +738,114 @@ final class VoiceSession: NSObject {
         if !player.isPlaying { player.play() }
     }
 
+    // MARK: - Abandoned turns
+
+    /// How long to let a turn the model has taken input for stay unanswered.
+    ///
+    /// Measured before it was chosen, because guessing got it wrong: ordinary
+    /// first-speech latency on 3.1-flash-live is **4.4–8.3 s** from setup
+    /// (five sessions, 2026-08-05), far slower than it feels in the kitchen. A
+    /// six-second window would have retried most healthy turns and had her
+    /// talk over herself, which is worse than the fault it fixes. Ten clears
+    /// the slowest measured turn with margin.
+    ///
+    /// `NEON_DEAD_TURN_SECS` forces it short, which is the only way to see the
+    /// retry fire on demand — the fault it exists for is the server's and
+    /// can't be provoked.
+    private static let deadTurnSeconds: TimeInterval =
+        ProcessInfo.processInfo.environment["NEON_DEAD_TURN_SECS"].flatMap(Double.init) ?? 10
+
+    /// Is the model still on the hook for an answer?
+    private var turnOwed: Bool { turnWatchdog != nil }
+
+    /// The model produced something, so it hasn't abandoned the turn.
+    private func answerStarted() {
+        turnWatchdog?.invalidate()
+        turnWatchdog = nil
+        pendingTurnText = ""
+        retriedTurn = false
+    }
+
+    private func armTurnWatchdog() {
+        DispatchQueue.main.async {
+            self.turnWatchdog?.invalidate()
+            self.turnWatchdog = Timer.scheduledTimer(
+                withTimeInterval: Self.deadTurnSeconds, repeats: false
+            ) { [weak self] _ in
+                self?.checkAbandonedTurn()
+            }
+        }
+    }
+
+    private func checkAbandonedTurn() {
+        // The timer has fired, so the stored reference is spent — clear it
+        // before any early return, or `turnOwed` stays true forever and the
+        // idle close it defers never happens.
+        turnWatchdog = nil
+        guard !closed, ready, !sleepRequested else { return }
+        // Anything that means she is working — a thought part, audio already
+        // playing, a tool round trip — and this is not an abandoned turn at
+        // all. `lastServerAt` only moves for real work (see isServerWorking),
+        // which is exactly the distinction needed here.
+        guard pendingPlaybacks == 0, !thinkingActive,
+              Date().timeIntervalSince(lastServerAt) >= Self.deadTurnSeconds - 1 else {
+            armTurnWatchdog()
+            return
+        }
+        // An abandoned wake-audio turn leaves nothing transcribed to replay,
+        // so fall back to the ordinary opener rather than giving up on a turn
+        // that was never spoken aloud in text.
+        var question = pendingTurnText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if question.isEmpty { question = Self.greeting }
+        if !retriedTurn {
+            // Ask it again in the model's own words. It transcribed the room
+            // correctly — it simply never answered — so replaying the
+            // transcript as a user turn asks the question that was actually
+            // asked, rather than a vague "are you there?".
+            retriedTurn = true
+            NSLog("Neon voice: no answer after %.0fs — retrying the turn", Self.deadTurnSeconds)
+            trace("api", "model went silent — asking again")
+            for m in engine.readyMessages(greeting: question) { sendJSON(m) }
+            bumpIdle()
+            armTurnWatchdog()
+            return
+        }
+        // Twice is enough. Closing puts her back to the wake word, which is a
+        // fresh socket and reliably works, instead of leaving her sat there
+        // looking awake and hearing nothing.
+        NSLog("Neon voice: model silent through a retry; closing so the next wake starts clean")
+        trace("api", "model never answered — closing")
+        close(reason: "model silent")
+    }
+
+    /// Frames the engine didn't understand used to vanish here, which is how a
+    /// stalled turn managed to look like an empty room for a whole release.
+    ///
+    /// Reported once per *shape* per session, and the shape reaches one level
+    /// into `serverContent` — otherwise every session logs a line, because two
+    /// shapes are ordinary protocol traffic rather than surprises: the
+    /// twice-a-second `sessionResumptionUpdate`, and a bare empty
+    /// `serverContent`, which turns up in perfectly healthy sessions and
+    /// carries nothing to learn from. Anything else is worth seeing.
+    private func noteUnrecognisedFrame(_ msg: [String: Any]) {
+        var keys = msg.keys.sorted()
+        guard !keys.isEmpty, keys != ["sessionResumptionUpdate"] else { return }
+        if keys == ["serverContent"] {
+            let inner = (msg["serverContent"] as? [String: Any])?.keys.sorted() ?? []
+            if inner.isEmpty { return }
+            keys = ["serverContent{\(inner.joined(separator: ","))}"]
+        }
+        let shape = keys.joined(separator: "+")
+        guard loggedFrameShapes.insert(shape).inserted else { return }
+        var detail = ""
+        if let data = try? JSONSerialization.data(withJSONObject: msg) {
+            detail = String(decoding: data, as: UTF8.self)
+            if detail.count > 300 { detail = String(detail.prefix(300)) + "…" }
+        }
+        NSLog("Neon voice: unrecognised frame {\(shape)} \(detail)")
+        trace("api", "unrecognised frame: \(shape)")
+    }
+
     // MARK: - Idle timeout
 
     private func bumpIdle() {
@@ -756,6 +893,13 @@ final class VoiceSession: NSObject {
                 self.exitDoze()
                 self.bumpIdle()
             } else if Date().timeIntervalSince(started) > 5.2 {
+                // Don't hang up on a turn she still owes an answer to. A slow
+                // turn can outlast the whole doze window (measured up to
+                // 8.3 s against a 5 s + 5.2 s close), so closing here would
+                // cut off replies that were simply late — and would pre-empt
+                // the retry that exists for the ones that never come. The
+                // watchdog resolves it either way, so this can't hang open.
+                guard !self.turnOwed else { return }
                 self.dozeTimer?.invalidate()
                 self.close(reason: "idle")
             }
