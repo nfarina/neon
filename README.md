@@ -2,7 +2,7 @@
 
 # Neon
 
-An ambient voice assistant that lives on a MacBook in a kitchen.
+An ambient voice assistant that lives on your spare Mac in your kitchen.
 
 She is a pair of glowing eyes on a screen. Say "Hey Neon"
 and the eyes open; talk, and she talks back — a real conversation over a
