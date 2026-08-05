@@ -3,6 +3,40 @@
     <channel>
         <title>Neon</title>
         <item>
+            <title>0.5</title>
+            <pubDate>Wed, 05 Aug 2026 10:35:51 -0700</pubDate>
+            <link>https://nfarina.github.io/neon</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/nfarina/neon/releases/tag/v0.5</sparkle:fullReleaseNotesLink>
+            <sparkle:version>98</sparkle:version>
+            <sparkle:shortVersionString>0.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[# Neon 0.5
+
+**She stops going quiet on you.** Some mornings she would wake to her name,
+listen while you talked, and then drift off without ever answering — looking
+for all the world like she hadn't heard a word.
+
+She had. The model was taking the question, transcribing it correctly, and
+then simply never replying: no answer, no error, nothing to wait for. Neon
+made it invisible by treating that silence as an empty room, and hung up on a
+question she had already understood.
+
+Now an unanswered question gets asked again, in her own words, and if that
+goes nowhere too she ends the session cleanly so the next "Hey Neon" starts
+fresh. She also waits out a slow answer instead of dozing off on one —
+replies can take longer than they feel like, and some were being cut off for
+being merely late.
+
+**Emotes keep their glow.** A smile or a raised brow reshapes her eyes by
+cutting into them, and the cut was slicing the halo off along with it — the
+light stopped dead on the flat edge, so a grin read as the eye being eaten
+rather than shaped. The glow now follows whatever shape the expression
+leaves.
+]]></description>
+            <enclosure url="https://github.com/nfarina/neon/releases/download/v0.5/Neon-0.5-macos.zip" length="14262888" type="application/octet-stream" sparkle:edSignature="cs+qhee6HPAWOPwffsdLqWGPCu5e5bn/WqfAvuq9PsUCb8Pdu/sHol923NtssrWomay285W36niEWx2Blve9AA=="/>
+        </item>
+        <item>
             <title>0.4</title>
             <pubDate>Tue, 04 Aug 2026 16:47:49 -0700</pubDate>
             <link>https://nfarina.github.io/neon</link>
@@ -34,17 +68,6 @@ work (speech, transcription, reasoning, tool calls) rather than on traffic.
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/nfarina/neon/releases/download/v0.3/Neon-0.3-macos.zip" length="14255048" type="application/octet-stream" sparkle:edSignature="VgdWLg7+IuvSSl0qcqu9PwKDFWUYpJbpAp9AVXBdVBJRd8cofrPxhpit8VEdkSzkQaJ5dW92VHvX/jYqmMYEDg=="/>
-        </item>
-        <item>
-            <title>0.2</title>
-            <pubDate>Mon, 03 Aug 2026 09:14:13 -0700</pubDate>
-            <link>https://nfarina.github.io/neon</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/nfarina/neon/releases/tag/v0.2</sparkle:fullReleaseNotesLink>
-            <sparkle:version>82</sparkle:version>
-            <sparkle:shortVersionString>0.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/nfarina/neon/releases/download/v0.2/Neon-0.2-macos.zip" length="13034256" type="application/octet-stream" sparkle:edSignature="Wox6/309YQDZvmBjF9+VsywEguMPTWJMCza1o2p37/STwOp/5AlFASWEa3VQ2NDcTjZxJcUG1G0gl05eUB74Dw=="/>
         </item>
     </channel>
 </rss>
