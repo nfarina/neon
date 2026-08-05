@@ -36,6 +36,21 @@ build scripts. The first ambient-assistant implementation, under `eyes/`.
   `pop` (uniform scale) and per-eye `offL`/`offR` (bounce, asymmetry). Hold a
   shape ~1.5 s: a fast flicker reads as a rendering glitch, not a feeling.
   `confused` is deliberately left untouched.
+- **Cut the shape first, light it second.** `brow` and `curve` are clips, and
+  they used to be applied around the two glow passes — so the shadow was
+  clipped along with the eye and the halo stopped dead at the brow line or the
+  cheek curve. Nick, 2026-08-05: "the eyes can get clipped by the eyebrow or
+  cheeks and it's a bit jarring because it cuts off the glow." On `happy`,
+  `excited` and `love` it read as the eye being eaten by a dark blob rather
+  than shaped by one. The eye is now composited into a small reused offscreen
+  canvas (`eyeLayer`) with the mask applied, and the main canvas casts both
+  glows from *that layer's* silhouette — so the light follows whatever the
+  emote left behind, however it was cut. Two things this needs and would
+  otherwise fail silently: `save`/`restore` around the mask, because a clip
+  survives `setTransform` and a leaked one makes `clearRect` unable to clear
+  (the first attempt did this — every frame accumulated into a striped mess);
+  and the capture sweep must now apply the mask itself, since it no longer
+  inherits the clip from the enclosing `save()`.
 - Listening look: `neon.hearing(amp)` widens the eyes slightly, lifts the
   glow with the speaker's voice level, and holds an attentive near-center
   gaze (saccades stop wandering). Two louder cues were tried and retired: a

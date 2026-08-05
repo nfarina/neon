@@ -707,6 +707,19 @@ function renderTimer() {
 }
 setInterval(() => { if (timerState && timerState.active && !timerState.ringing) renderTimer(); }, 1000);
 
+// A scratch canvas for compositing one eye before it is lit. Reused and only
+// ever grown — allocating a canvas 60 times a second would churn for nothing.
+const eyeLayerEl = document.createElement("canvas");
+const eyeLayerCtx = eyeLayerEl.getContext("2d");
+function eyeLayer(w, h) {
+  const nw = Math.max(1, Math.ceil(w * DPR)), nh = Math.max(1, Math.ceil(h * DPR));
+  if (eyeLayerEl.width < nw || eyeLayerEl.height < nh) {
+    eyeLayerEl.width = Math.max(eyeLayerEl.width, nw);
+    eyeLayerEl.height = Math.max(eyeLayerEl.height, nh);
+  }
+  return eyeLayerCtx;
+}
+
 // ============================================================ render
 function draw() {
   const t = now;
@@ -780,59 +793,89 @@ function draw() {
     grad.addColorStop(1, `hsl(${hue + 6} 96% ${botL}%)`);
 
     ctx.save();
+    // The shape an emote leaves behind, applied to whichever context is
+    // drawing the eye.
+    //
     // Brow: clip away a slanted wedge off the top. With no eyebrows to draw,
     // the angle of the upper lid is the whole expression — inner-down reads
-    // stern, outer-down reads sad.
-    const brow = S.brow.v;
-    if (Math.abs(brow) > 0.01) {
-      const drop = Math.abs(brow) * h * 0.55;
-      const inner = brow > 0 ? drop : 0, outer = brow > 0 ? 0 : drop;
-      // dir -1 is the left eye, whose inner edge is on the right
-      const yL = y + (dir < 0 ? outer : inner);
-      const yR = y + (dir < 0 ? inner : outer);
-      const pad = w;
-      ctx.beginPath();
-      ctx.moveTo(x - pad, yL);
-      ctx.lineTo(x + w + pad, yR);
-      ctx.lineTo(x + w + pad, y + h + pad);
-      ctx.lineTo(x - pad, y + h + pad);
-      ctx.clip();
-    }
-    // Crescent: subtract a circle rising from below, turning the eye into a
-    // ^^ smile. Even-odd on rect+circle gives "rect minus circle".
-    if (S.curve.v > 0.01) {
-      const eaten = S.curve.v * h * 0.62;
-      const R = w * 1.05;
-      ctx.beginPath();
-      ctx.rect(x - w, y - h, w * 3, h * 3);
-      ctx.arc(cx, y + h + R - eaten, R, 0, Math.PI * 2);
-      ctx.clip("evenodd");
-    }
+    // stern, outer-down reads sad. Crescent: subtract a circle rising from
+    // below, turning the eye into a ^^ smile; even-odd on rect+circle gives
+    // "rect minus circle".
+    const mask = (c) => {
+      const brow = S.brow.v;
+      if (Math.abs(brow) > 0.01) {
+        const drop = Math.abs(brow) * h * 0.55;
+        const inner = brow > 0 ? drop : 0, outer = brow > 0 ? 0 : drop;
+        // dir -1 is the left eye, whose inner edge is on the right
+        const yL = y + (dir < 0 ? outer : inner);
+        const yR = y + (dir < 0 ? inner : outer);
+        const wedge = w;
+        c.beginPath();
+        c.moveTo(x - wedge, yL);
+        c.lineTo(x + w + wedge, yR);
+        c.lineTo(x + w + wedge, y + h + wedge);
+        c.lineTo(x - wedge, y + h + wedge);
+        c.clip();
+      }
+      if (S.curve.v > 0.01) {
+        const eaten = S.curve.v * h * 0.62;
+        const R = w * 1.05;
+        c.beginPath();
+        c.rect(x - w, y - h, w * 3, h * 3);
+        c.arc(cx, y + h + R - eaten, R, 0, Math.PI * 2);
+        c.clip("evenodd");
+      }
+    };
+
+    // Cut the shape first, light it second. Clipping the glow passes
+    // themselves — which is what this used to do — sliced the halo off along
+    // the brow line and the cheek curve, so an emote read as the eye being
+    // chopped rather than shaped: the light stopped dead exactly where the
+    // expression was strongest. Compositing the finished silhouette into a
+    // layer and casting both glows from *that* means the light follows
+    // whatever the emote left behind, however it was cut.
+    const pad = 2, lw = w + pad * 2, lh = h + pad * 2;
+    const lc = eyeLayer(lw, lh);
+    lc.setTransform(1, 0, 0, 1, 0, 0);
+    lc.clearRect(0, 0, eyeLayerEl.width, eyeLayerEl.height);
+    // save/restore around the mask is load-bearing, not tidiness: a clip
+    // survives setTransform, so leaving one behind means the *next* eye — and
+    // every later frame — clears and draws through the previous eye's mask.
+    lc.save();
+    lc.setTransform(DPR, 0, 0, DPR, 0, 0);
+    // Work in the same absolute coordinates as the main canvas, so the shared
+    // gradient and mask geometry need no translating of their own.
+    lc.translate(-(x - pad), -(y - pad));
+    mask(lc);
+    lc.fillStyle = grad;
+    lc.beginPath();
+    lc.roundRect(x, y, w, h, r);
+    lc.fill();
+    lc.restore();
+    const sw = Math.max(1, Math.ceil(lw * DPR)), sh = Math.max(1, Math.ceil(lh * DPR));
 
     // wide soft bloom pass
     ctx.save();
     ctx.shadowColor = `hsla(${hue}, 100%, 60%, ${0.35 + 0.3 * lum})`;
     ctx.shadowBlur = B * 0.10 * (0.4 + 0.6 * lum) * (1 + speakAmp * 0.6 + pulse * 1.4);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, r);
-    ctx.fill();
+    ctx.drawImage(eyeLayerEl, 0, 0, sw, sh, x - pad, y - pad, lw, lh);
     ctx.restore();
 
     // tight glow pass
     ctx.save();
     ctx.shadowColor = `hsla(${hue}, 100%, 70%, ${0.5 + 0.4 * lum})`;
     ctx.shadowBlur = B * 0.030;
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, r);
-    ctx.fill();
+    ctx.drawImage(eyeLayerEl, 0, 0, sw, sh, x - pad, y - pad, lw, lh);
     ctx.restore();
 
     // Camera: aperture ring closing in, plus a sensor line sweeping down.
     const cam = S.cam.v;
     if (cam > 0.01) {
       ctx.save();
+      // The sweep used to inherit the brow/crescent clips from the enclosing
+      // save(); now that those live on the layer, it has to ask for them —
+      // otherwise the line runs on past the shape the emote cut.
+      mask(ctx);
       ctx.beginPath();
       ctx.roundRect(x, y, w, h, r);
       ctx.clip();
@@ -853,7 +896,7 @@ function draw() {
       ctx.restore();
     }
 
-    ctx.restore();  // brow / crescent clips
+    ctx.restore();  // per-eye state
   }
 
   ctx.globalAlpha = 1;
