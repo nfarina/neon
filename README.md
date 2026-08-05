@@ -4,7 +4,7 @@
 
 An ambient voice assistant that lives on a MacBook in a kitchen.
 
-She is a pair of glowing eyes on a screen bolted to the wall. Say "Hey Neon"
+She is a pair of glowing eyes on a screen. Say "Hey Neon"
 and the eyes open; talk, and she talks back — a real conversation over a
 realtime speech-to-speech model, not a command line with a voice. She sets a
 timer, reads the family calendar, looks through the camera when seeing would
@@ -13,9 +13,6 @@ puts herself back to sleep when the room goes quiet.
 
 She was built as a replacement for an Alexa in a kitchen, by someone who wanted
 one that could actually hold a conversation.
-
-<!-- TODO: a photo of Neon on the kitchen wall goes here. It is the only thing
-     that explains this project in under a second. -->
 
 ## What she does
 
