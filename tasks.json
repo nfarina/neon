@@ -1,0 +1,7 @@
+{
+  "deploy": {
+    "title": "Deploy",
+    "description": "Build the development shell, install it over /Applications/Neon.app, and relaunch her — the only thing that gets fixes actually running in the kitchen.",
+    "cmd": "eyes/deploy.sh"
+  }
+}
