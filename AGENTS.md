@@ -170,6 +170,18 @@ shipping it to anyone who wants one.
   is never declared to the model, not that it is refused.
 - Background tasks via Claude Code are **shelved** — too slow to be part of a
   spoken conversation. Off by default; see `docs/tasks.md`.
+- Automated tests exist (2026-08-08): `eyes/shell/Tests/NeonShellTests`, run
+  with `swift test` from `eyes/shell/`. No separate library target was
+  needed — the test target depends on `NeonShell` directly and
+  `@testable import`s it. Coverage so far is the doze/idle state machine in
+  `VoiceSession.swift` and the pure scoring functions in `MemoryStore.swift`;
+  neither touches `~/.config/neon/` (that's real household data, not a test
+  fixture). `.github/workflows/test.yml` runs `swift build` and `swift test`
+  on every push to `main` and every pull request — see docs/machine.md for a
+  local `swift test` snag specific to this Command-Line-Tools-only machine.
+  `riot start neon:deploy` (`eyes/deploy.sh`) is still the only thing that
+  gets a change actually running in the kitchen, and it does not run the
+  test suite itself — that's on the agent, before deploying.
 - This file stays focused on facts, actual decisions, current intent, and open
   questions rather than generic guidance for AI agents.
 - It also stays *short*. It was 694 lines before the 2026-08-02 split, which

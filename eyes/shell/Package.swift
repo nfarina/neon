@@ -31,6 +31,11 @@ let package = Package(
                 .unsafeFlags(["-Xlinker", "-rpath",
                               "-Xlinker", "@executable_path/../Frameworks"]),
             ]
-        )
+        ),
+        .testTarget(
+            name: "NeonShellTests",
+            dependencies: ["NeonShell"],
+            path: "Tests/NeonShellTests"
+        ),
     ]
 )

@@ -74,7 +74,12 @@ final class VoiceSession: NSObject {
     // (silence before the doze animation *starts*) drops to 5s. The doze
     // animation itself still takes a few seconds on top of that, which is
     // fine — that's listening time he's OK with, unlike open-ended silence.
-    private static let idleSeconds: TimeInterval = 5
+    //
+    // `NEON_IDLE_SECS` forces it short, the same escape hatch deadTurnSeconds
+    // uses below — it's what lets VoiceSessionDozeTests exercise a multi-second
+    // real-world timeout in a fraction of a second rather than waiting it out.
+    static let idleSeconds: TimeInterval =
+        ProcessInfo.processInfo.environment["NEON_IDLE_SECS"].flatMap(Double.init) ?? 5
 
     let engine: VoiceEngine
     private var ws: URLSessionWebSocketTask?
@@ -82,19 +87,19 @@ final class VoiceSession: NSObject {
     private var inputConverter: AVAudioConverter?
     private let sendFormat: AVAudioFormat
     private let playFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
-    private var idleTimer: Timer?
-    private var closed = false
-    private var sleepRequested = false  // model called go_to_sleep; close after audio finishes
+    var idleTimer: Timer?
+    var closed = false
+    var sleepRequested = false  // model called go_to_sleep; close after audio finishes
     private var sleepTimer: Timer?
-    private var dozing = false
-    private var dozeTimer: Timer?
-    private var lastAudioAt = Date.distantPast  // last audio *received* (chunks may trail the tool call)
-    private var thinkingActive = false
-    private var ready = false
+    var dozing = false
+    var dozeTimer: Timer?
+    var lastAudioAt = Date.distantPast  // last audio *received* (chunks may trail the tool call)
+    var thinkingActive = false
+    var ready = false
     /// Any message from the server, of any kind. Thinking with `includeThoughts`
     /// can go quiet for longer than the idle timeout, and a tool round trip is
     /// silent by nature — both used to look exactly like an empty room.
-    private var lastServerAt = Date.distantPast
+    var lastServerAt = Date.distantPast
     /// Notes that arrived before setup finished.
     private var pendingNotes: [String] = []
     // A turn the model took and then abandoned. Gemini Live intermittently
@@ -104,10 +109,10 @@ final class VoiceSession: NSObject {
     // with no Neon code in the loop at all — see docs/voice.md). Left alone it
     // is indistinguishable from deafness: she sits there, dozes, and closes
     // without a word, having heard every syllable.
-    private var turnWatchdog: Timer?
+    var turnWatchdog: Timer?
     /// What the room said in the turn the model owes an answer to.
-    private var pendingTurnText = ""
-    private var retriedTurn = false
+    var pendingTurnText = ""
+    var retriedTurn = false
     /// Frame shapes already reported this session, so an unrecognised frame is
     /// logged once rather than twice a second.
     private var loggedFrameShapes = Set<String>()
@@ -115,7 +120,7 @@ final class VoiceSession: NSObject {
     // arrives in a clump when the model responds, not while Nick talks, so
     // this is the only live signal that he's mid-sentence. (Echo-cancelled
     // input: Neon's own voice can't keep her awake.)
-    private var lastVoiceAt = Date.distantPast
+    var lastVoiceAt = Date.distantPast
     private let sessionStart = Date()
     private var usage = VoiceUsage()
     private var heard = ""  // running input transcript, for the debug overlay
@@ -125,7 +130,7 @@ final class VoiceSession: NSObject {
 
     // Playback bookkeeping; also drives the half-duplex fallback when the
     // hub's echo cancellation is unavailable.
-    private var pendingPlaybacks = 0
+    var pendingPlaybacks = 0
     private var playbackTailUntil = Date.distantPast
 
     /// The words spoken after the wake name, if any — the opening user turn.
@@ -752,21 +757,21 @@ final class VoiceSession: NSObject {
     /// `NEON_DEAD_TURN_SECS` forces it short, which is the only way to see the
     /// retry fire on demand — the fault it exists for is the server's and
     /// can't be provoked.
-    private static let deadTurnSeconds: TimeInterval =
+    static let deadTurnSeconds: TimeInterval =
         ProcessInfo.processInfo.environment["NEON_DEAD_TURN_SECS"].flatMap(Double.init) ?? 10
 
     /// Is the model still on the hook for an answer?
-    private var turnOwed: Bool { turnWatchdog != nil }
+    var turnOwed: Bool { turnWatchdog != nil }
 
     /// The model produced something, so it hasn't abandoned the turn.
-    private func answerStarted() {
+    func answerStarted() {
         turnWatchdog?.invalidate()
         turnWatchdog = nil
         pendingTurnText = ""
         retriedTurn = false
     }
 
-    private func armTurnWatchdog() {
+    func armTurnWatchdog() {
         DispatchQueue.main.async {
             self.turnWatchdog?.invalidate()
             self.turnWatchdog = Timer.scheduledTimer(
@@ -777,7 +782,7 @@ final class VoiceSession: NSObject {
         }
     }
 
-    private func checkAbandonedTurn() {
+    func checkAbandonedTurn() {
         // The timer has fired, so the stored reference is spent — clear it
         // before any early return, or `turnOwed` stays true forever and the
         // idle close it defers never happens.
@@ -848,7 +853,7 @@ final class VoiceSession: NSObject {
 
     // MARK: - Idle timeout
 
-    private func bumpIdle() {
+    func bumpIdle() {
         DispatchQueue.main.async {
             if self.dozing { self.exitDoze() }
             self.idleTimer?.invalidate()
@@ -877,10 +882,16 @@ final class VoiceSession: NSObject {
         }
     }
 
+    /// How long the doze animation runs before it closes the session outright.
+    /// `NEON_DOZE_WINDOW_SECS` shortens it for tests, same escape hatch as
+    /// idleSeconds/deadTurnSeconds above.
+    static let dozeWindowSeconds: TimeInterval =
+        ProcessInfo.processInfo.environment["NEON_DOZE_WINDOW_SECS"].flatMap(Double.init) ?? 5.2
+
     // Idle doesn't hang up immediately: the eyes doze off while the session
     // stays open, so someone resuming mid-doze is still heard. The session
     // closes only when the doze animation has fully completed (~5 s).
-    private func enterDoze() {
+    func enterDoze() {
         guard !dozing, !closed, !sleepRequested, !thinkingActive else { return }
         dozing = true
         NSLog("Neon voice: dozing (grace window)")
@@ -892,7 +903,7 @@ final class VoiceSession: NSObject {
             if Date().timeIntervalSince(self.lastVoiceAt) < 0.4 {
                 self.exitDoze()
                 self.bumpIdle()
-            } else if Date().timeIntervalSince(started) > 5.2 {
+            } else if Date().timeIntervalSince(started) > Self.dozeWindowSeconds {
                 // Don't hang up on a turn she still owes an answer to. A slow
                 // turn can outlast the whole doze window (measured up to
                 // 8.3 s against a 5 s + 5.2 s close), so closing here would
@@ -906,7 +917,7 @@ final class VoiceSession: NSObject {
         }
     }
 
-    private func exitDoze() {
+    func exitDoze() {
         guard dozing else { return }
         dozing = false
         dozeTimer?.invalidate()

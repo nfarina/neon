@@ -57,7 +57,7 @@ final class MemoryStore {
     func remember(_ text: String, source: String = "neon") -> Memory? {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard clean.count > 2 else { return nil }
-        if let i = memories.firstIndex(where: { similarity($0.text, clean) > 0.6 }) {
+        if let i = memories.firstIndex(where: { Self.similarity($0.text, clean) > 0.6 }) {
             // Keep the longer phrasing: it usually carries the newer detail.
             if clean.count > memories[i].text.count { memories[i].text = clean }
             memories[i].at = Date()
@@ -87,7 +87,7 @@ final class MemoryStore {
 
     /// Best matches for a query, most relevant first.
     func search(_ query: String, limit: Int = 5) -> [Memory] {
-        let terms = tokens(query)
+        let terms = Self.tokens(query)
         guard !terms.isEmpty else { return [] }
         let scored = memories.map { (m: Memory) -> (Memory, Double) in
             (m, score(m, terms: terms))
@@ -111,7 +111,7 @@ final class MemoryStore {
     func digest(maxChars: Int = 700) -> String? {
         guard !memories.isEmpty else { return nil }
         let ranked = memories.sorted { a, b in
-            salience(a) > salience(b)
+            Self.salience(a) > Self.salience(b)
         }
         var lines: [String] = []
         var used = 0
@@ -124,7 +124,10 @@ final class MemoryStore {
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
-    private func salience(_ m: Memory) -> Double {
+    /// Recency-weighted usage score, newest and most-used first. Pure
+    /// function of the memory and the current time — no store state — so it
+    /// is covered directly by MemoryStoreTests without touching disk.
+    static func salience(_ m: Memory) -> Double {
         let ageDays = Date().timeIntervalSince(m.at) / 86400
         let recency = 1.0 / (1.0 + ageDays / 30)     // half-weight at a month
         return recency + Double(m.uses) * 0.15
@@ -139,7 +142,7 @@ final class MemoryStore {
         "where", "who", "how", "me", "us", "about", "his", "her", "their",
     ]
 
-    private func tokens(_ s: String) -> [String] {
+    static func tokens(_ s: String) -> [String] {
         s.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.count > 2 && !Self.stopwords.contains($0) }
@@ -151,19 +154,19 @@ final class MemoryStore {
     /// Rare words say more about relevance than common ones, so weight each
     /// term by how few memories contain it.
     private func score(_ m: Memory, terms: [String]) -> Double {
-        let memTokens = Set(tokens(m.text))
+        let memTokens = Set(Self.tokens(m.text))
         guard !memTokens.isEmpty else { return 0 }
         var total = 0.0
         for term in Set(terms) where memTokens.contains(term) {
-            let containing = memories.reduce(0) { $0 + (tokens($1.text).contains(term) ? 1 : 0) }
+            let containing = memories.reduce(0) { $0 + (Self.tokens($1.text).contains(term) ? 1 : 0) }
             let idf = log(Double(memories.count + 1) / Double(containing + 1)) + 1
             total += idf
         }
         guard total > 0 else { return 0 }
-        return total + salience(m) * 0.3
+        return total + Self.salience(m) * 0.3
     }
 
-    private func similarity(_ a: String, _ b: String) -> Double {
+    static func similarity(_ a: String, _ b: String) -> Double {
         let x = Set(tokens(a)), y = Set(tokens(b))
         guard !x.isEmpty, !y.isEmpty else { return 0 }
         return Double(x.intersection(y).count) / Double(min(x.count, y.count))

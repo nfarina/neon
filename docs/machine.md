@@ -67,3 +67,32 @@ Baseline as of July 31, 2026, amended since:
   "Neon Dev", then any Apple Development identity (a machine signed into
   Xcode already has one, and it is just as stable — no cert to generate or
   trust), and only then falls back to ad-hoc with a warning.
+- `swift test` (diagnosed 2026-08-08) needs Apple's Swift Testing runtime —
+  `Testing.framework` and `lib_TestingInterop.dylib` — which Command Line
+  Tools installs under
+  `/Library/Developer/CommandLineTools/Library/Developer/{Frameworks,usr/lib}/`
+  rather than anywhere dyld searches by default. Setting
+  `DYLD_FRAMEWORK_PATH`/`DYLD_LIBRARY_PATH` doesn't fix it either: the test
+  runner execs `swiftpm-testing-helper`, which lives under a SIP-protected
+  path and has those variables stripped before it starts. Plain XCTest isn't
+  a fallback here — there is no `XCTest.framework` for macOS under Command
+  Line Tools at all, only the private `XCTestSupport` framework. None of this
+  is a defect in the test target itself: GitHub's `macos-latest` CI runner
+  ships full Xcode and hits none of it, which is why `.github/workflows/test.yml`
+  is the trustworthy signal. To get a real local run anyway (e.g. to iterate
+  on a test before pushing), copy the two missing pieces next to the built
+  test bundle after each clean build, then run tests normally:
+  ```sh
+  cd eyes/shell
+  swift build   # creates .build/…/debug/, same place Sparkle/onnxruntime land
+  cp -R /Library/Developer/CommandLineTools/Library/Developer/Frameworks/*.framework \
+    .build/arm64-apple-macosx/debug/
+  cp /Library/Developer/CommandLineTools/Library/Developer/usr/lib/lib_TestingInterop.dylib \
+    .build/arm64-apple-macosx/debug/
+  swift test
+  ```
+  (Copying before the first `swift build` instead just gets the copy wiped —
+  that command creates the directory, it doesn't merge into it.)
+  `.build/` is gitignored, so this never leaves anything to clean up in the
+  repo — it's purely a local workaround, redone whenever the build directory
+  is cleaned.

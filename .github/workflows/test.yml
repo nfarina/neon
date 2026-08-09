@@ -1,0 +1,24 @@
+name: Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    # Neon is a native macOS app (AVFoundation, WKWebView, Sparkle) — this
+    # has to be a macOS runner, not the ubuntu-latest sibling repos use.
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        working-directory: eyes/shell
+        run: swift build
+
+      - name: Test
+        working-directory: eyes/shell
+        run: swift test
